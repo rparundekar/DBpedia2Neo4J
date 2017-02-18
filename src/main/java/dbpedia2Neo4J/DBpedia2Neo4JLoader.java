@@ -43,12 +43,15 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 	 * @param deleteAll Should all existing nodes and edges be deleted?
 	 */
 	public DBpedia2Neo4JLoader(String neo4jUsername, String neo4jPassword, boolean deleteAll){
-		logger.info("Connecting to Neo4J...");
+		logger.info("Connecting to Neo4J, erasing if needed & creating index...");
 		// Connect to Neo4J
 		driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic( neo4jUsername, neo4jPassword) );
 		// Delete existing nodes and edges if that's what's needed
 		if(deleteAll)
 			deleteAll();
+		//Create the default index
+		createIndex();
+
 		logger.info("...Done");
 	}
 
@@ -98,6 +101,15 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 	private void deleteAll(){
 		Session session = driver.session();
 		session.run( "MATCH (n) DETACH DELETE n");
+		session.close();
+	}
+	
+	/**
+	 * Create default index on the identifier 
+	 */
+	private void createIndex(){
+		Session session = driver.session();
+		session.run( "CREATE INDEX ON :Thing(id)");
 		session.close();
 	}
 
@@ -241,7 +253,7 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 			uri=uri.substring("http://dbpedia.org/property/".length());
 		if(uri.startsWith("http://dbpedia.org/datatype/"))
 			uri=uri.substring("http://dbpedia.org/datatype/".length());
-		//logger.warn("Error in stripping away: " + uri);
+		// Note: This may cause some loss of information, but will prevent errors.
 		return uri.replaceAll("[^A-Za-z0-9]", "_");
 	}
 }
