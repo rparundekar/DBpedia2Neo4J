@@ -21,6 +21,7 @@ import org.neo4j.driver.v1.Record;
 import org.neo4j.driver.v1.Session;
 import org.neo4j.driver.v1.StatementResult;
 import org.neo4j.driver.v1.Transaction;
+import org.neo4j.driver.v1.exceptions.ClientException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -228,13 +229,15 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 					if(o.toString().contains("__")){
 						String split[] = o.toString().split("__");
 						o=split[0];
-						property+=  "__" + split[1];
+						property+=  "__" + split[1].replaceAll("[^A-Za-z0-9]", "_");
 					}
 					// Set the property 
 					tx.run("MATCH (s:Thing) WHERE id(s) = {s} SET s."+property+" = {o}", parameters("s", subjectNode.id(), "o", o));
 				}
 				//WooHoo!
 				tx.success();  
+			}catch (ClientException e) {
+				logger.error("Error in inserting into database: {}",  e.getMessage());
 			}
 		}
 		//If you really want to read stuff.
