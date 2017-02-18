@@ -12,5 +12,15 @@
 			<artifactId>neo4j-java-driver</artifactId>
 			<version>1.1.0</version>
 		</dependency>
+		<dependency>
+			<groupId>org.apache.jena</groupId>
+			<artifactId>jena-arq</artifactId>
+			<version>3.1.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-log4j12</artifactId>
+			<version>1.7.23</version>
+		</dependency>
 	</dependencies>
 </project>
