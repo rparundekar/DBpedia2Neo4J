@@ -119,7 +119,7 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 	 * @param args Have the username, password, if DB should be cleared AND list of files to load here
 	 */
 	public static void main(String[] args){
-		DBpedia2Neo4JLoader loadFile = new DBpedia2Neo4JLoader("neo4j", "password", true);
+		DBpedia2Neo4JLoader loadFile = new DBpedia2Neo4JLoader("neo4j", "password", false);
 		loadFile.load(new File("/Users/rparundekar/dataspace/dbpedia2016/infobox_properties_en.ttl"));
 		loadFile.close();
 	}
@@ -229,7 +229,8 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 					if(o.toString().contains("__")){
 						String split[] = o.toString().split("__");
 						o=split[0];
-						property+=  "__" + split[1].replaceAll("[^A-Za-z0-9]", "_");
+						if(split.length>1)
+							property+=  "__" + split[1].replaceAll("[^A-Za-z0-9]", "_");
 					}
 					// Set the property 
 					tx.run("MATCH (s:Thing) WHERE id(s) = {s} SET s."+property+" = {o}", parameters("s", subjectNode.id(), "o", o));
