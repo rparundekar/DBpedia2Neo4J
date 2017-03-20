@@ -101,12 +101,12 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 		try{	
 			// Step 2: Create the csv with the onehot types;
 			File outputCsv = new File(turtleFile.getParentFile(), "oneHot.csv");
-			CSVWriter csvWriter = new CSVWriter(new FileWriter(outputCsv));
+			CSVWriter csvWriter = new CSVWriter(new FileWriter(outputCsv), ',', CSVWriter.NO_QUOTE_CHARACTER);
 			//Write the header
 			String[] header = new String[oneHotCount+1];
 			header[0]="id";
 			for(String id:oneHotPosition.keySet()){
-				header[oneHotPosition.get(id)+1]=id;
+				header[oneHotPosition.get(id)+1]=DBpediaHelper.stripClean(id);
 			}
 			csvWriter.writeNext(header);
 			logger.info("Writing to oneHotFile... (Sit back & go grab a coffee. This may take a while.)");
