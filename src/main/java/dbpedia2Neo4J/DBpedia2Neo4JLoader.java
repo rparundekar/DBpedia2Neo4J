@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  *  This is a loader for DBpedia data as a Graph into Neo4J.
- *  NOTE: Currently only tested on Oct 2016 files for infobox_properties_en.ttl, instance_types_en.ttl
+ *  NOTE: Currently only tested on Oct 2016 files for infobox_properties_en.ttl
  * @author rparundekar
  */
 public class DBpedia2Neo4JLoader implements StreamRDF{
@@ -156,11 +156,11 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 		
 		// Get and clean the subject URI (There are no blank nodes in DBpedia)
 		String subject = triple.getMatchSubject().getURI();
-		subject=stripClean(subject);
+		subject=DBpediaHelper.stripClean(subject);
 
 		// Get and clean the predicate URI (There are no blank nodes in DBpedia)
 		String predicate = triple.getMatchPredicate().getURI();
-		predicate = stripClean(predicate);
+		predicate = DBpediaHelper.stripClean(predicate);
 
 		// Get the object. It can be a URI or a literal (There are no blank nodes in the DBpedia)
 		Node object = triple.getMatchObject();
@@ -168,7 +168,7 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 		if(object.isURI()){
 			// Get and clean the object URI (There are no blank nodes in DBpedia)
 			o=object.getURI();
-			o=stripClean((String)o);
+			o=DBpediaHelper.stripClean((String)o);
 		}
 		else{
 			o=object.getLiteralValue();
@@ -189,7 +189,7 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 				// If there's a datatype, then clean it up.
 				String v=object.getLiteralLexicalForm();
 				o=Double.parseDouble(v);
-				o=o + "__" + stripClean(object.getLiteralDatatypeURI());
+				o=o + "__" + DBpediaHelper.stripClean(object.getLiteralDatatypeURI());
 			}
 			else{
 				// Else, just make it a string. 
@@ -245,19 +245,5 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 		logger.debug(subject + " : "+ predicate+ " : " + o);
 	}
 
-	/**
-	 * Strips the DBpedia URI prefixes & replaces non alphanumeric characters to avoid property errors 
-	 * @param uri The URI to strip & clean
-	 * @return The last part of the URI if in DBpedia.
-	 */
-	private String stripClean(String uri) {
-		if(uri.startsWith("http://dbpedia.org/resource/"))
-			uri=uri.substring("http://dbpedia.org/resource/".length());
-		if(uri.startsWith("http://dbpedia.org/property/"))
-			uri=uri.substring("http://dbpedia.org/property/".length());
-		if(uri.startsWith("http://dbpedia.org/datatype/"))
-			uri=uri.substring("http://dbpedia.org/datatype/".length());
-		// Note: This may cause some loss of information, but will prevent errors.
-		return uri.replaceAll("[^A-Za-z0-9]", "_");
-	}
+	
 }
