@@ -119,7 +119,7 @@ public class DBpedia2Neo4JLoader implements StreamRDF{
 	 * @param args Have the username, password, if DB should be cleared AND list of files to load here
 	 */
 	public static void main(String[] args){
-		DBpedia2Neo4JLoader loadFile = new DBpedia2Neo4JLoader("neo4j", "password", false);
+		DBpedia2Neo4JLoader loadFile = new DBpedia2Neo4JLoader("neo4j", "icd", false);
 		loadFile.load(new File("/Users/rparundekar/dataspace/dbpedia2016/infobox_properties_en.ttl"));
 		loadFile.close();
 	}
