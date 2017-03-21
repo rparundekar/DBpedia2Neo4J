@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import com.opencsv.CSVReader;
 
+import randomWalks.Binner;
 import randomWalks.Neo4JRandomWalkGenerator;
 import randomWalks.RandomWalkExpressionType;
 
@@ -30,6 +31,8 @@ public class Neo4J2DatasetFromOneHot{
 	private final RandomWalkExpressionType LEVEL=RandomWalkExpressionType.ATTRIBUTE_PRESENCE;
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
+	
+	private final Binner binner;
 	/**
 	 * Create a new connection object to Neo4J, to the existing database
 	 * @param neo4jUsername Username for Neo4J
@@ -42,6 +45,7 @@ public class Neo4J2DatasetFromOneHot{
 		driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic( neo4jUsername, neo4jPassword) );
 		//Create the random walk generator
 		neo4jRandomWalkGenerator=new Neo4JRandomWalkGenerator(driver);
+		binner=new Binner(driver);
 		logger.info("...Done");
 	}
 
@@ -50,6 +54,34 @@ public class Neo4J2DatasetFromOneHot{
 	 * @param oneHotCsv The onehot csv file 
 	 */
 	public void create(File oneHotCsv){
+		//First, we load the attribute values for binning numbers, etc.
+		
+		try{
+			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
+			//Read the header
+			String[] header=csvReader.readNext();
+			if(!header[0].equals("id")){
+				logger.error("First column is not the id");
+			}else{
+				//Read each line to get the id & then get random walks
+				String[] row=null;
+				while((row=csvReader.readNext())!=null){
+					// Print progress
+					String id=row[0];
+					binner.update(id);
+					if(csvReader.getLinesRead()%1000==0){
+						logger.info("{} lines parsed.", csvReader.getLinesRead());
+					}
+				}
+			}
+			// Close IO
+			csvReader.close();
+		}catch(IOException e){
+			// Something went wrong with the files.
+			logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
+		}
+		binner.writeToFile(oneHotCsv.getParentFile());
+		//Then, we create the dataset using random walks.
 		try{
 			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
 			//Read the header
