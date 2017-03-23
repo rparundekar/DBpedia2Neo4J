@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 public class Binner {
 	// SLF4J Logger bound to Log4J 
 	private static final Logger logger=LoggerFactory.getLogger(Binner.class);
-	private final Map<String, Set<Object>> values;
+	private Map<String, Set<Object>> values;
 	private final Map<String, double[]> bins;
 	private final Set<String> shouldNotBin;
 	public Binner(){
@@ -76,7 +76,8 @@ public class Binner {
 			}
 		}
 		//Clear the values to free some space;
-		values.clear();
+		logger.info("Cleaning up some memory");
+		values=null;
 		System.gc();
 	}
 

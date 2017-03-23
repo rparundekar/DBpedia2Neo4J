@@ -37,11 +37,9 @@ public class Neo4J2DatasetFromOneHot{
 	private static final Logger logger=LoggerFactory.getLogger(Neo4J2DatasetFromOneHot.class);
 	// Driver object created once for the connection
 	private final Driver driver;
-	private final Map<String,String[]> oneHotClasses;
 	private final Map<String,Set<Integer>> oneHotWalks;
 	private final Map<String, Integer> oneHotWalkIds;
 	private int oneHotWalkIdCount=1;
-	private String[] oneHotClassHeader;
 	private final RandomWalkExpressionType LEVEL=RandomWalkExpressionType.ATTRIBUTE_PRESENCE;
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
@@ -59,7 +57,6 @@ public class Neo4J2DatasetFromOneHot{
 		//Create the random walk generator
 		neo4jRandomWalkGenerator=new Neo4JRandomWalkGenerator(driver);
 		binner=new Binner();
-		oneHotClasses=new HashMap<>();
 		oneHotWalks=new HashMap<>();
 		oneHotWalkIds=new HashMap<>();
 		logger.info("...Done");
@@ -70,18 +67,18 @@ public class Neo4J2DatasetFromOneHot{
 	 * @param oneHotCsv The onehot csv file 
 	 */
 	public void create(File oneHotCsv){
+		boolean test=true;
 		//First, we load the attribute values for binning numbers, etc.
 		try{
 			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
 			//Read the header
-			oneHotClassHeader=csvReader.readNext();
-			if(!oneHotClassHeader[0].equals("id")){
+			String[] header=csvReader.readNext();
+			if(!header[0].equals("id")){
 				logger.error("First column is not the id");
 			}else{
 				//Read each line to get the id & then get random walks
 				String[] row=null;
 				while((row=csvReader.readNext())!=null){
-					oneHotClasses.put(row[0], row);
 					// Print progress
 					String id=row[0];
 					String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
@@ -114,10 +111,10 @@ public class Neo4J2DatasetFromOneHot{
 						}
 					}
 					if(csvReader.getLinesRead()%1000==0){
-						logger.info("{} lines parsed.", csvReader.getLinesRead());
+						logger.info("{} lines parsed to create bins from properties.", csvReader.getLinesRead());
 					}
 
-					if(csvReader.getLinesRead()>100000){
+					if(test && csvReader.getLinesRead()>100000){
 						break;
 					}
 				}
@@ -169,9 +166,9 @@ public class Neo4J2DatasetFromOneHot{
 						}
 					}
 					if(csvReader.getLinesRead()%1000==0){
-						logger.info("{} lines parsed.", csvReader.getLinesRead());
+						logger.info("{} lines parsed to random walk.", csvReader.getLinesRead());
 					}
-					if(csvReader.getLinesRead()>100000){
+					if(test && csvReader.getLinesRead()>100000){
 						break;
 					}
 				}
@@ -184,8 +181,12 @@ public class Neo4J2DatasetFromOneHot{
 		}
 
 		try{
+			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
+			//Read the header
+			String[] header=csvReader.readNext();
+			
 			CSVWriter datasetYWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetY.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-			datasetYWriter.writeNext(oneHotClassHeader);
+			datasetYWriter.writeNext(header);
 			datasetYWriter.flush();
 			
 			CSVWriter datasetXWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetX.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
@@ -194,10 +195,16 @@ public class Neo4J2DatasetFromOneHot{
 			for(String oneHotWalk:oneHotWalkIds.keySet()){
 				oneHotWalksHeader[oneHotWalkIds.get(oneHotWalk)+1]=oneHotWalk;
 			}
-			datasetXWriter.writeNext(oneHotClassHeader);
+			datasetXWriter.writeNext(header);
 			datasetXWriter.flush();
 			
-			for(String id:oneHotWalks.keySet()){
+			//Read each line to get the id & then get random walks
+			String[] row=null;
+			while((row=csvReader.readNext())!=null){
+				// Print progress
+				String id=row[0];
+				if(!oneHotWalks.containsKey(id))
+					continue;
 				String[] oneHotWalksRow= new String[oneHotWalkIdCount];
 				Set<Integer> cols=oneHotWalks.get(id);
 				oneHotWalksRow[0]=id;
@@ -210,8 +217,16 @@ public class Neo4J2DatasetFromOneHot{
 				datasetXWriter.writeNext(oneHotWalksRow);
 				datasetXWriter.flush();
 				
-				datasetYWriter.writeNext(oneHotClasses.get(id));
+				datasetYWriter.writeNext(row);
 				datasetYWriter.flush();
+				
+				
+				if(csvReader.getLinesRead()%1000==0){
+					logger.info("{} lines parsed to create the final dataset.", csvReader.getLinesRead());
+				}
+				if(test && csvReader.getLinesRead()>100000){
+					break;
+				}
 			}
 			datasetYWriter.close();
 			datasetXWriter.close();
