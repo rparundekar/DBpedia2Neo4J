@@ -20,8 +20,8 @@ import org.slf4j.LoggerFactory;
 
 public class Neo4JRandomWalkGenerator {
 	// SLF4J Logger bound to Log4J 
-		private static final Logger logger=LoggerFactory.getLogger(Neo4JRandomWalkGenerator.class);
-		// Driver object created once for the connection
+	private static final Logger logger=LoggerFactory.getLogger(Neo4JRandomWalkGenerator.class);
+	// Driver object created once for the connection
 	private final Driver driver;
 	private static final int DEFAULT_ATTRIBUTE_PRESENCE=5;
 	private static final int DEFAULT_ATTRIBUTE_VALUES=5;
@@ -30,7 +30,7 @@ public class Neo4JRandomWalkGenerator {
 		this.driver=driver;
 	}
 
-	public Map<RandomWalkExpressionType, Set<String>> getWalks(String id, Map<RandomWalkExpressionType, Integer> numberOfWalks) {
+	public Map<RandomWalkExpressionType, Set<String>> getWalks(String id, Map<RandomWalkExpressionType, Integer> numberOfWalks, Binner binner) {
 		Map<RandomWalkExpressionType, Set<String>> walks=new HashMap<>();
 		String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
 		try(Session session=driver.session()){
@@ -39,7 +39,7 @@ public class Neo4JRandomWalkGenerator {
 				StatementResult result = tx.run(query, parameters("id", id));
 				if(result.hasNext()){
 					logger.debug("\t{} Found!", id);
-					
+
 					//Find all attributes
 					result = tx.run("MATCH (t:Thing) WHERE t.id = {id} return keys(t)", parameters("id", id));
 					List<Object> attributes=new ArrayList<>();
@@ -50,7 +50,7 @@ public class Neo4JRandomWalkGenerator {
 					}
 					//Remove "id" attribute
 					attributes.remove("id");
-					
+
 					//Fetch number of walks to generate
 					int numberOfWalksAttributePresence=DEFAULT_ATTRIBUTE_PRESENCE;
 					if(numberOfWalks!=null && numberOfWalks.containsKey(RandomWalkExpressionType.ATTRIBUTE_PRESENCE) && numberOfWalks.get(RandomWalkExpressionType.ATTRIBUTE_PRESENCE)>=0)
@@ -58,10 +58,10 @@ public class Neo4JRandomWalkGenerator {
 					int numberOfWalksAttributeValues=DEFAULT_ATTRIBUTE_VALUES;
 					if(numberOfWalks!=null && numberOfWalks.containsKey(RandomWalkExpressionType.ATTRIBUTE_VALUES) && numberOfWalks.get(RandomWalkExpressionType.ATTRIBUTE_VALUES)>=0)
 						numberOfWalksAttributeValues=numberOfWalks.get(RandomWalkExpressionType.ATTRIBUTE_VALUES);
-					
+
 					//Get random walks for attribute presence only
 					if(!attributes.isEmpty()){
-						
+
 						//-----------------------Attribute Presence-----------------------//
 						//Initialize variable to hold random walks for attribute presence
 						Set<String> attributesPresent=new HashSet<>();
@@ -74,7 +74,7 @@ public class Neo4JRandomWalkGenerator {
 						}
 						//Add the walks to the return variable
 						walks.put(RandomWalkExpressionType.ATTRIBUTE_PRESENCE, attributesPresent);
-						
+
 						//-----------------------Attribute VALUES-----------------------//
 						//Initialize variable to hold random walks for attribute presence
 						Set<String> attributesValues=new HashSet<>();
@@ -87,19 +87,17 @@ public class Neo4JRandomWalkGenerator {
 								Record record = result.next();
 								Object values=record.get("t."+attribute).asObject();
 								if(values instanceof List){
-									String attributeValue=attribute + "=" + ((List)values).get((int)(Math.random()*((List)values).size()));
-									if(!attributesValues.contains(attributeValue))
-										attributesValues.add(attributeValue);
-								}else{
-									//TODO:Separate strings vs. numbers
-									String attributeValue=attribute + "=" + values;
-									if(!attributesValues.contains(attributeValue))
-										attributesValues.add(attributeValue);
+									//Get one random value;
+									values=((List)values).get((int)(Math.random()*((List)values).size()));
 								}
+								String attributeValue=attribute + "=" + binner.getBin(attribute, values);
+								if(!attributesValues.contains(attributeValue))
+									attributesValues.add(attributeValue);
 							}
 						}
 						//Add the walks to the return variable
 						walks.put(RandomWalkExpressionType.ATTRIBUTE_VALUES, attributesValues);
+						
 					}
 				}
 				//WooHoo!
