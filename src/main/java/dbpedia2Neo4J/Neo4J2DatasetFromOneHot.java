@@ -3,11 +3,14 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import static org.neo4j.driver.v1.Values.parameters;
+
+import org.apache.commons.collections.functors.PredicateTransformer;
 import org.neo4j.driver.v1.AuthTokens;
 import org.neo4j.driver.v1.Driver;
 import org.neo4j.driver.v1.GraphDatabase;
@@ -184,19 +187,42 @@ public class Neo4J2DatasetFromOneHot{
 			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
 			//Read the header
 			String[] header=csvReader.readNext();
+			String[] newHeader=new String[header.length];
+			PrintWriter headersX=new PrintWriter(new File(oneHotCsv.getParentFile(),"headerX.csv"));
+			PrintWriter headersY=new PrintWriter(new File(oneHotCsv.getParentFile(),"headerY.csv"));
 			
+			headersY.println("header, short");
+			for(int i=0;i<newHeader.length;i++){
+				newHeader[i]="class_"+i;
+			}
+			newHeader[0]="id";
+			for(int i=0;i<newHeader.length;i++){
+				headersY.println(header[i]+","+newHeader[i]);
+				headersY.flush();
+			}
+			headersY.close();
 			CSVWriter datasetYWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetY.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-			datasetYWriter.writeNext(header);
+			datasetYWriter.writeNext(newHeader);
 			datasetYWriter.flush();
 			
-			CSVWriter datasetXWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetX.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
 			String[] oneHotWalksHeader= new String[oneHotWalkIdCount+1];
+			String[] shortOneHotWalksHeader= new String[oneHotWalkIdCount+1];
 			oneHotWalksHeader[0]="id";
+			shortOneHotWalksHeader[0]="id";
 			for(String oneHotWalk:oneHotWalkIds.keySet()){
 				oneHotWalksHeader[oneHotWalkIds.get(oneHotWalk)+1]=oneHotWalk;
+				shortOneHotWalksHeader[oneHotWalkIds.get(oneHotWalk)+1]="walk_"+(oneHotWalkIds.get(oneHotWalk)+1);
 			}
-			datasetXWriter.writeNext(header);
+			for(int i=0;i<oneHotWalksHeader.length;i++){
+				headersY.println(oneHotWalksHeader[i]+","+shortOneHotWalksHeader[i]);
+				headersY.flush();
+			}
+			headersY.close();
+			CSVWriter datasetXWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetX.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
+			datasetXWriter.writeNext(shortOneHotWalksHeader);
 			datasetXWriter.flush();
+			
+			
 			
 			//Read each line to get the id & then get random walks
 			String[] row=null;
@@ -210,9 +236,9 @@ public class Neo4J2DatasetFromOneHot{
 				oneHotWalksRow[0]=id;
 				for(int j=1;j<oneHotWalkIdCount;j++){
 					if(cols.contains(j))
-						oneHotWalksRow[j]="true";
+						oneHotWalksRow[j]="1";
 					else
-						oneHotWalksRow[j]="false";
+						oneHotWalksRow[j]="0";
 				}
 				datasetXWriter.writeNext(oneHotWalksRow);
 				datasetXWriter.flush();
@@ -228,6 +254,7 @@ public class Neo4J2DatasetFromOneHot{
 					break;
 				}
 			}
+			csvReader.close();
 			datasetYWriter.close();
 			datasetXWriter.close();
 		}catch(IOException e){

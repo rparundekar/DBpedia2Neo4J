@@ -75,10 +75,6 @@ public class Binner {
 				shouldNotBin.add(attribute);
 			}
 		}
-		//Clear the values to free some space;
-		logger.info("Cleaning up some memory");
-		values=null;
-		System.gc();
 	}
 
 	public String getBin(String attribute, Object value){
@@ -136,5 +132,10 @@ public class Binner {
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		}
+
+		//Clear the values to free some space;
+		logger.info("Cleaning up some memory");
+		values=null;
+		System.gc();
 	}
 }
