@@ -40,9 +40,10 @@ public class Neo4J2DatasetFromOneHot{
 	private static final Logger logger=LoggerFactory.getLogger(Neo4J2DatasetFromOneHot.class);
 	// Driver object created once for the connection
 	private final Driver driver;
-	private final Map<String,Set<Integer>> oneHotWalks;
-	private final Map<String, Integer> oneHotWalkIds;
-	private int oneHotWalkIdCount=1;
+	private final Map<String,Set<Integer>> randomWalks;
+	private final Map<String, Integer> randomWalkIds;
+	private int numberOfWalks=1;
+	
 	private final RandomWalkExpressionType LEVEL=RandomWalkExpressionType.ATTRIBUTE_PRESENCE;
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
@@ -60,8 +61,8 @@ public class Neo4J2DatasetFromOneHot{
 		//Create the random walk generator
 		neo4jRandomWalkGenerator=new Neo4JRandomWalkGenerator(driver);
 		binner=new Binner();
-		oneHotWalks=new HashMap<>();
-		oneHotWalkIds=new HashMap<>();
+		randomWalks=new HashMap<>();
+		randomWalkIds=new HashMap<>();
 		logger.info("...Done");
 	}
 
@@ -148,21 +149,35 @@ public class Neo4J2DatasetFromOneHot{
 					if(!walks.isEmpty()){
 						logger.debug("{} : {}", id, walks);
 						for(RandomWalkExpressionType randomWalkExpressionType:walks.keySet()){
-							if(randomWalkExpressionType!=RandomWalkExpressionType.ATTRIBUTE_PRESENCE){
+							switch(LEVEL){
+							case ATTRIBUTE_PRESENCE:
+								if(randomWalkExpressionType!=RandomWalkExpressionType.ATTRIBUTE_PRESENCE){
+									continue;
+								}
+								break;
+							case ATTRIBUTE_VALUES:
+								if(!
+										(randomWalkExpressionType==RandomWalkExpressionType.ATTRIBUTE_PRESENCE
+										|| randomWalkExpressionType==RandomWalkExpressionType.ATTRIBUTE_VALUES)
+								   ){
+									continue;
+								}
+								break;
+							default:
 								continue;
 							}
 
 							Set<String> ws = walks.get(randomWalkExpressionType);
-							Set<Integer> oneHotWs=oneHotWalks.get(id);
+							Set<Integer> oneHotWs=randomWalks.get(id);
 							if(oneHotWs==null){
 								oneHotWs=new HashSet<>();
-								oneHotWalks.put(id, oneHotWs);
+								randomWalks.put(id, oneHotWs);
 							}
 							for(String w:ws){
-								Integer walkId=oneHotWalkIds.get(w);
+								Integer walkId=randomWalkIds.get(w);
 								if(walkId==null){
-									walkId=oneHotWalkIdCount++;
-									oneHotWalkIds.put(w, walkId);
+									walkId=numberOfWalks++;
+									randomWalkIds.put(w, walkId);
 								}
 								oneHotWs.add(walkId);
 							}
@@ -205,13 +220,13 @@ public class Neo4J2DatasetFromOneHot{
 			datasetYWriter.writeNext(newHeader);
 			datasetYWriter.flush();
 			
-			String[] oneHotWalksHeader= new String[oneHotWalkIdCount];
-			String[] shortOneHotWalksHeader= new String[oneHotWalkIdCount];
+			String[] oneHotWalksHeader= new String[numberOfWalks];
+			String[] shortOneHotWalksHeader= new String[numberOfWalks];
 			oneHotWalksHeader[0]="id";
 			shortOneHotWalksHeader[0]="id";
-			for(String oneHotWalk:oneHotWalkIds.keySet()){
-				oneHotWalksHeader[oneHotWalkIds.get(oneHotWalk)+1]=oneHotWalk;
-				shortOneHotWalksHeader[oneHotWalkIds.get(oneHotWalk)+1]="walk_"+(oneHotWalkIds.get(oneHotWalk)+1);
+			for(String oneHotWalk:randomWalkIds.keySet()){
+				oneHotWalksHeader[randomWalkIds.get(oneHotWalk)]=oneHotWalk;
+				shortOneHotWalksHeader[randomWalkIds.get(oneHotWalk)]="walk_"+(randomWalkIds.get(oneHotWalk));
 			}
 			headersX.println("header, short");
 			for(int i=0;i<oneHotWalksHeader.length;i++){
@@ -225,17 +240,18 @@ public class Neo4J2DatasetFromOneHot{
 			
 			
 			
-			//Read each line to get the id & then get random walks
+			//Read each line to get the id & then get random walks & create a dataset 
+			//file for the walks and a dataset file for the classes.
 			String[] row=null;
 			while((row=csvReader.readNext())!=null){
 				// Print progress
 				String id=row[0];
-				if(!oneHotWalks.containsKey(id))
+				if(!randomWalks.containsKey(id))
 					continue;
-				String[] oneHotWalksRow= new String[oneHotWalkIdCount];
-				Set<Integer> cols=oneHotWalks.get(id);
+				String[] oneHotWalksRow= new String[numberOfWalks];
+				Set<Integer> cols=randomWalks.get(id);
 				oneHotWalksRow[0]=id;
-				for(int j=1;j<oneHotWalkIdCount;j++){
+				for(int j=1;j<numberOfWalks;j++){
 					if(cols.contains(j))
 						oneHotWalksRow[j]="1";
 					else
