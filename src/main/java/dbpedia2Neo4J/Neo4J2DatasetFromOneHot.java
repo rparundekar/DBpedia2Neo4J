@@ -70,7 +70,7 @@ public class Neo4J2DatasetFromOneHot{
 	 * @param oneHotCsv The onehot csv file 
 	 */
 	public void create(File oneHotCsv){
-		boolean test=true;
+		boolean test=false;
 		//First, we load the attribute values for binning numbers, etc.
 		try{
 			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
@@ -114,7 +114,7 @@ public class Neo4J2DatasetFromOneHot{
 						}
 					}
 					if(csvReader.getLinesRead()%1000==0){
-						logger.info("{} lines parsed to create bins from properties.", csvReader.getLinesRead());
+						logger.info("{} lines parsed to create bins from attributes.", csvReader.getLinesRead());
 					}
 
 					if(test && csvReader.getLinesRead()>100000){
@@ -205,19 +205,20 @@ public class Neo4J2DatasetFromOneHot{
 			datasetYWriter.writeNext(newHeader);
 			datasetYWriter.flush();
 			
-			String[] oneHotWalksHeader= new String[oneHotWalkIdCount+1];
-			String[] shortOneHotWalksHeader= new String[oneHotWalkIdCount+1];
+			String[] oneHotWalksHeader= new String[oneHotWalkIdCount];
+			String[] shortOneHotWalksHeader= new String[oneHotWalkIdCount];
 			oneHotWalksHeader[0]="id";
 			shortOneHotWalksHeader[0]="id";
 			for(String oneHotWalk:oneHotWalkIds.keySet()){
 				oneHotWalksHeader[oneHotWalkIds.get(oneHotWalk)+1]=oneHotWalk;
 				shortOneHotWalksHeader[oneHotWalkIds.get(oneHotWalk)+1]="walk_"+(oneHotWalkIds.get(oneHotWalk)+1);
 			}
+			headersX.println("header, short");
 			for(int i=0;i<oneHotWalksHeader.length;i++){
-				headersY.println(oneHotWalksHeader[i]+","+shortOneHotWalksHeader[i]);
-				headersY.flush();
+				headersX.println(oneHotWalksHeader[i]+","+shortOneHotWalksHeader[i]);
+				headersX.flush();
 			}
-			headersY.close();
+			headersX.close();
 			CSVWriter datasetXWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetX.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
 			datasetXWriter.writeNext(shortOneHotWalksHeader);
 			datasetXWriter.flush();
