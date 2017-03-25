@@ -216,9 +216,9 @@ public class Neo4J2DatasetFromOneHot{
 				headersY.flush();
 			}
 			headersY.close();
-			CSVWriter datasetYWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetY.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-			datasetYWriter.writeNext(newHeader);
-			datasetYWriter.flush();
+			
+			
+			CSVWriter datasetYWriter=null;
 			
 			String[] oneHotWalksHeader= new String[numberOfWalks];
 			String[] shortOneHotWalksHeader= new String[numberOfWalks];
@@ -234,16 +234,33 @@ public class Neo4J2DatasetFromOneHot{
 				headersX.flush();
 			}
 			headersX.close();
-			CSVWriter datasetXWriter=new CSVWriter(new FileWriter(new File(oneHotCsv.getParentFile(),"datasetX.csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-			datasetXWriter.writeNext(shortOneHotWalksHeader);
-			datasetXWriter.flush();
-			
-			
+			CSVWriter datasetXWriter=null;
+			File folder = new File(oneHotCsv.getParentFile(), "dataset");
+			if(!folder.exists())
+				folder.mkdir();
 			
 			//Read each line to get the id & then get random walks & create a dataset 
 			//file for the walks and a dataset file for the classes.
 			String[] row=null;
+			int batch=0;
+			int batchSize=100000;
 			while((row=csvReader.readNext())!=null){
+				long linesRead = csvReader.getLinesRead();
+				if(linesRead>(batch*batchSize)){
+					batch++;
+					
+					if(datasetYWriter!=null)
+						datasetYWriter.close();
+					datasetYWriter=new CSVWriter(new FileWriter(new File(folder,"datasetY_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
+					datasetYWriter.writeNext(newHeader);
+					datasetYWriter.flush();
+					
+					if(datasetXWriter!=null)
+						datasetXWriter.close();
+					datasetXWriter=new CSVWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
+					datasetXWriter.writeNext(shortOneHotWalksHeader);
+					datasetXWriter.flush();
+				}
 				// Print progress
 				String id=row[0];
 				if(!randomWalks.containsKey(id))
