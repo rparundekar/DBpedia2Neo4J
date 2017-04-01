@@ -243,7 +243,7 @@ public class Neo4J2DatasetFromOneHot{
 			//file for the walks and a dataset file for the classes.
 			String[] row=null;
 			int batch=0;
-			int batchSize=100000;
+			int batchSize=20000;
 			while((row=csvReader.readNext())!=null){
 				long linesRead = csvReader.getLinesRead();
 				if(linesRead>(batch*batchSize)){
