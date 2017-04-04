@@ -1,16 +1,18 @@
 package dbpedia2Neo4J;
+import static org.neo4j.driver.v1.Values.parameters;
+
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import static org.neo4j.driver.v1.Values.parameters;
 
-import org.apache.commons.collections.functors.PredicateTransformer;
 import org.neo4j.driver.v1.AuthTokens;
 import org.neo4j.driver.v1.Driver;
 import org.neo4j.driver.v1.GraphDatabase;
@@ -28,7 +30,7 @@ import com.opencsv.CSVWriter;
 
 import randomWalks.Binner;
 import randomWalks.Neo4JRandomWalkGenerator;
-import randomWalks.RandomWalkExpressionType;
+import randomWalks.StepType;
 
 /**
  *  This is a generator of the data from Neo4J and OneHot file
@@ -42,9 +44,8 @@ public class Neo4J2DatasetFromOneHot{
 	private final Driver driver;
 	private final Map<String,Set<Integer>> randomWalks;
 	private final Map<String, Integer> randomWalkIds;
-	private int numberOfWalks=1;
-	
-	private final RandomWalkExpressionType LEVEL=RandomWalkExpressionType.ATTRIBUTE_PRESENCE;
+	private int walkCounter=1;
+
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
 	private Binner binner;
@@ -118,7 +119,7 @@ public class Neo4J2DatasetFromOneHot{
 						logger.info("{} lines parsed to create bins from attributes.", csvReader.getLinesRead());
 					}
 
-					if(test && csvReader.getLinesRead()>100000){
+					if(test && csvReader.getLinesRead()>10000){
 						break;
 					}
 				}
@@ -145,48 +146,33 @@ public class Neo4J2DatasetFromOneHot{
 				while((row=csvReader.readNext())!=null){
 					// Print progress
 					String id=row[0];
-					Map<RandomWalkExpressionType, Set<String>> walks=neo4jRandomWalkGenerator.getWalks(id, null, binner);
+					List<StepType> allowedSteps=new ArrayList<>();
+					allowedSteps.add(StepType.ATTRIBUTE_PRESENCE);
+//					allowedSteps.add(StepType.ATTRIBUTE_VALUE);
+					Set<String> walks=neo4jRandomWalkGenerator.getWalks(id, allowedSteps, binner,1,5);
 					if(!walks.isEmpty()){
 						logger.debug("{} : {}", id, walks);
-						for(RandomWalkExpressionType randomWalkExpressionType:walks.keySet()){
-							switch(LEVEL){
-							case ATTRIBUTE_PRESENCE:
-								if(randomWalkExpressionType!=RandomWalkExpressionType.ATTRIBUTE_PRESENCE){
-									continue;
-								}
-								break;
-							case ATTRIBUTE_VALUES:
-								if(!
-										(randomWalkExpressionType==RandomWalkExpressionType.ATTRIBUTE_PRESENCE
-										|| randomWalkExpressionType==RandomWalkExpressionType.ATTRIBUTE_VALUES)
-								   ){
-									continue;
-								}
-								break;
-							default:
-								continue;
-							}
-
-							Set<String> ws = walks.get(randomWalkExpressionType);
-							Set<Integer> oneHotWs=randomWalks.get(id);
-							if(oneHotWs==null){
-								oneHotWs=new HashSet<>();
-								randomWalks.put(id, oneHotWs);
-							}
-							for(String w:ws){
-								Integer walkId=randomWalkIds.get(w);
-								if(walkId==null){
-									walkId=numberOfWalks++;
-									randomWalkIds.put(w, walkId);
-								}
-								oneHotWs.add(walkId);
-							}
+						Set<String> ws = walks;
+						
+						Set<Integer> oneHotWs=randomWalks.get(id);
+						if(oneHotWs==null){
+							oneHotWs=new HashSet<>();
+							randomWalks.put(id, oneHotWs);
 						}
+						for(String w:ws){
+							Integer walkId=randomWalkIds.get(w);
+							if(walkId==null){
+								walkId=walkCounter++;
+								randomWalkIds.put(w, walkId);
+							}
+							oneHotWs.add(walkId);
+						}
+
 					}
 					if(csvReader.getLinesRead()%1000==0){
 						logger.info("{} lines parsed to random walk.", csvReader.getLinesRead());
 					}
-					if(test && csvReader.getLinesRead()>100000){
+					if(test && csvReader.getLinesRead()>10000){
 						break;
 					}
 				}
@@ -205,7 +191,7 @@ public class Neo4J2DatasetFromOneHot{
 			String[] newHeader=new String[header.length];
 			PrintWriter headersX=new PrintWriter(new File(oneHotCsv.getParentFile(),"headerX.csv"));
 			PrintWriter headersY=new PrintWriter(new File(oneHotCsv.getParentFile(),"headerY.csv"));
-			
+
 			headersY.println("header, short");
 			for(int i=0;i<newHeader.length;i++){
 				newHeader[i]="class_"+i;
@@ -216,12 +202,12 @@ public class Neo4J2DatasetFromOneHot{
 				headersY.flush();
 			}
 			headersY.close();
-			
-			
+
+
 			CSVWriter datasetYWriter=null;
-			
-			String[] oneHotWalksHeader= new String[numberOfWalks];
-			String[] shortOneHotWalksHeader= new String[numberOfWalks];
+
+			String[] oneHotWalksHeader= new String[walkCounter];
+			String[] shortOneHotWalksHeader= new String[walkCounter];
 			oneHotWalksHeader[0]="id";
 			shortOneHotWalksHeader[0]="id";
 			for(String oneHotWalk:randomWalkIds.keySet()){
@@ -238,23 +224,23 @@ public class Neo4J2DatasetFromOneHot{
 			File folder = new File(oneHotCsv.getParentFile(), "dataset");
 			if(!folder.exists())
 				folder.mkdir();
-			
+
 			//Read each line to get the id & then get random walks & create a dataset 
 			//file for the walks and a dataset file for the classes.
 			String[] row=null;
 			int batch=0;
-			int batchSize=20000;
+			int batchSize=25000;
 			while((row=csvReader.readNext())!=null){
 				long linesRead = csvReader.getLinesRead();
 				if(linesRead>(batch*batchSize)){
 					batch++;
-					
+
 					if(datasetYWriter!=null)
 						datasetYWriter.close();
 					datasetYWriter=new CSVWriter(new FileWriter(new File(folder,"datasetY_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
 					datasetYWriter.writeNext(newHeader);
 					datasetYWriter.flush();
-					
+
 					if(datasetXWriter!=null)
 						datasetXWriter.close();
 					datasetXWriter=new CSVWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
@@ -265,10 +251,10 @@ public class Neo4J2DatasetFromOneHot{
 				String id=row[0];
 				if(!randomWalks.containsKey(id))
 					continue;
-				String[] oneHotWalksRow= new String[numberOfWalks];
+				String[] oneHotWalksRow= new String[walkCounter];
 				Set<Integer> cols=randomWalks.get(id);
 				oneHotWalksRow[0]=id;
-				for(int j=1;j<numberOfWalks;j++){
+				for(int j=1;j<walkCounter;j++){
 					if(cols.contains(j))
 						oneHotWalksRow[j]="1";
 					else
@@ -276,15 +262,15 @@ public class Neo4J2DatasetFromOneHot{
 				}
 				datasetXWriter.writeNext(oneHotWalksRow);
 				datasetXWriter.flush();
-				
+
 				datasetYWriter.writeNext(row);
 				datasetYWriter.flush();
-				
-				
+
+
 				if(csvReader.getLinesRead()%1000==0){
 					logger.info("{} lines parsed to create the final dataset.", csvReader.getLinesRead());
 				}
-				if(test && csvReader.getLinesRead()>100000){
+				if(test && csvReader.getLinesRead()>10000){
 					break;
 				}
 			}

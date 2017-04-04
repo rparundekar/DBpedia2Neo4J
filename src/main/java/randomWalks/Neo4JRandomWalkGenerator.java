@@ -3,18 +3,16 @@ package randomWalks;
 import static org.neo4j.driver.v1.Values.parameters;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.neo4j.driver.v1.Driver;
-import org.neo4j.driver.v1.Record;
 import org.neo4j.driver.v1.Session;
 import org.neo4j.driver.v1.StatementResult;
 import org.neo4j.driver.v1.Transaction;
 import org.neo4j.driver.v1.exceptions.ClientException;
+import org.neo4j.driver.v1.types.Node;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,88 +21,79 @@ public class Neo4JRandomWalkGenerator {
 	private static final Logger logger=LoggerFactory.getLogger(Neo4JRandomWalkGenerator.class);
 	// Driver object created once for the connection
 	private final Driver driver;
-	private static final int DEFAULT_ATTRIBUTE_PRESENCE=5;
-	private static final int DEFAULT_ATTRIBUTE_VALUES=5;
 
 	public Neo4JRandomWalkGenerator(Driver driver){
 		this.driver=driver;
 	}
 
-	public Map<RandomWalkExpressionType, Set<String>> getWalks(String id, Map<RandomWalkExpressionType, Integer> numberOfWalks, Binner binner) {
-		Map<RandomWalkExpressionType, Set<String>> walks=new HashMap<>();
-		String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
-		try(Session session=driver.session()){
-			try (Transaction tx = session.beginTransaction())
-			{
-				StatementResult result = tx.run(query, parameters("id", id));
-				if(result.hasNext()){
-					logger.debug("\t{} Found!", id);
-
-					//Find all attributes
-					result = tx.run("MATCH (t:Thing) WHERE t.id = {id} return keys(t)", parameters("id", id));
-					List<Object> attributes=new ArrayList<>();
-					while(result.hasNext()){
-						Record record = result.next();
-						logger.debug("Attributes : {}",record.get("keys(t)").asList());
-						attributes.addAll(record.get("keys(t)").asList());
-					}
-					//Remove "id" attribute
-					attributes.remove("id");
-
-					//Fetch number of walks to generate
-					int numberOfWalksAttributePresence=DEFAULT_ATTRIBUTE_PRESENCE;
-					if(numberOfWalks!=null && numberOfWalks.containsKey(RandomWalkExpressionType.ATTRIBUTE_PRESENCE) && numberOfWalks.get(RandomWalkExpressionType.ATTRIBUTE_PRESENCE)>=0)
-						numberOfWalksAttributePresence=numberOfWalks.get(RandomWalkExpressionType.ATTRIBUTE_PRESENCE);
-					int numberOfWalksAttributeValues=DEFAULT_ATTRIBUTE_VALUES;
-					if(numberOfWalks!=null && numberOfWalks.containsKey(RandomWalkExpressionType.ATTRIBUTE_VALUES) && numberOfWalks.get(RandomWalkExpressionType.ATTRIBUTE_VALUES)>=0)
-						numberOfWalksAttributeValues=numberOfWalks.get(RandomWalkExpressionType.ATTRIBUTE_VALUES);
-
-					//Get random walks for attribute presence only
-					if(!attributes.isEmpty()){
-
-						//-----------------------Attribute Presence-----------------------//
-						//Initialize variable to hold random walks for attribute presence
-						Set<String> attributesPresent=new HashSet<>();
-						//Perform random walks for attribute presence: Randomly pick numberOfWalksAttributePresence of the attributes;
-						for(int i=0;i<numberOfWalksAttributePresence;i++)
-						{
-							String attribute=(String)attributes.get((int)(Math.random()*attributes.size()));
-							if(!attributesPresent.contains(attribute))
-								attributesPresent.add(attribute);
-						}
-						//Add the walks to the return variable
-						walks.put(RandomWalkExpressionType.ATTRIBUTE_PRESENCE, attributesPresent);
-
-						//-----------------------Attribute VALUES-----------------------//
-						//Initialize variable to hold random walks for attribute presence
-						Set<String> attributesValues=new HashSet<>();
-						//Perform random walks for attribute presence: Randomly pick numberOfWalksAttributePresence of the attributes;
-						for(int i=0;i<numberOfWalksAttributeValues;i++)
-						{
-							String attribute=(String)attributes.get((int)(Math.random()*attributes.size()));
-							result = tx.run("MATCH (t:Thing) WHERE t.id = {id} return t." +attribute, parameters("id", id));
-							while(result.hasNext()){
-								Record record = result.next();
-								Object values=record.get("t."+attribute).asObject();
-								if(values instanceof List){
-									//Get one random value;
-									values=((List)values).get((int)(Math.random()*((List)values).size()));
+	public Set<String> getWalks(String id, List<StepType> allowedTypes, Binner binner, int maxLength, int numberOfWalks) {
+		Set<String> walks=new HashSet<>();
+		
+		for(int eachWalk=0;eachWalk<numberOfWalks;eachWalk++){
+			int lengthOfWalk = (int) Math.ceil(Math.random()*maxLength);
+			String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
+			try(Session session=driver.session()){
+				try (Transaction tx = session.beginTransaction())
+				{
+					StatementResult result = tx.run(query, parameters("id", id));
+					if(result.hasNext()){
+						logger.debug("\t{} Found!", id);
+						Node node = result.next().get("t").asNode();
+						Node startNode=node;
+						StringBuilder walk=new StringBuilder();
+						for(int step=0;step<lengthOfWalk;step++){
+							int index=(int) Math.floor(Math.random()*allowedTypes.size());
+							StepType stepType = allowedTypes.get(index);
+							switch(stepType){
+							case ATTRIBUTE_PRESENCE:
+								//Find all attributes
+								List<String> attributes=new ArrayList<>();
+								for(String attr:node.keys()){
+									if(node.id()==startNode.id() && attr.equals("id"))
+										continue;
+									attributes.add(attr);
 								}
-								String attributeValue=attribute + "=" + binner.getBin(attribute, values);
-								if(!attributesValues.contains(attributeValue))
-									attributesValues.add(attributeValue);
+								if(attributes.size()==0){
+									continue;
+								}
+								String attribute=(String)attributes.get((int)(Math.random()*attributes.size()));
+								walk.append("has_" + attribute +",");
+								//Stay on same node
+								break;
+							case ATTRIBUTE_VALUE:
+								//Find all attributes & values
+								List<String> attrValues=new ArrayList<>();
+								for(String attr:node.keys()){
+									if(node.id()==startNode.id() && attr.equals("id"))
+										continue;
+									Object value=node.get(attr).asObject();
+									if(value instanceof List)
+									{
+										List<Object> list=node.get(attr).asList();
+										value=(int)(Math.random()*list.size());
+									}
+									attrValues.add(attr +"="+value.toString());
+								}
+								if(attrValues.size()==0){
+									continue;
+								}
+								String attrVal=(String)attrValues.get((int)(Math.random()*attrValues.size()));
+								walk.append(attrVal +",");
+								//Stay on same node
+								break;
+							default:
+								break;
+							
 							}
 						}
-						//Add the walks to the return variable
-						walks.put(RandomWalkExpressionType.ATTRIBUTE_VALUES, attributesValues);
-						
+						walks.add(walk.toString());
 					}
+					//WooHoo!
+					tx.success();  
+				}catch (ClientException e) {
+					e.printStackTrace();
+					logger.error("Error in getting walks: {}",  e.getMessage());
 				}
-				//WooHoo!
-				tx.success();  
-			}catch (ClientException e) {
-				e.printStackTrace();
-				logger.error("Error in getting walks: {}",  e.getMessage());
 			}
 		}
 		return walks;
