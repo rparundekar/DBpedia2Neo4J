@@ -60,7 +60,7 @@ public class Neo4J2DatasetFromOneHot{
 		// Connect to Neo4J
 		driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic( neo4jUsername, neo4jPassword) );
 		//Create the random walk generator
-		neo4jRandomWalkGenerator=new Neo4JRandomWalkGenerator(driver);
+		neo4jRandomWalkGenerator=new Neo4JRandomWalkGenerator();
 		binner=new Binner();
 		randomWalks=new HashMap<>();
 		randomWalkIds=new HashMap<>();
@@ -83,45 +83,34 @@ public class Neo4J2DatasetFromOneHot{
 			}else{
 				//Read each line to get the id & then get random walks
 				String[] row=null;
-				while((row=csvReader.readNext())!=null){
-					// Print progress
-					String id=row[0];
-					String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
-					try(Session session=driver.session()){
-						try (Transaction tx = session.beginTransaction())
-						{
-							StatementResult result = tx.run(query, parameters("id", id));
-							if(result.hasNext()){
-								logger.debug("\t{} Found!", id);
-
-								//Find all attributes
-								result = tx.run("MATCH (t:Thing) WHERE t.id = {id} return t", parameters("id", id));
-								while(result.hasNext()){
-									Record record = result.next();
-									Node t=record.get("t").asNode();
-									Iterable<String> keys = t.keys();
-									for(String key:keys){
-										if(key.equals("id"))
-											continue;
-										Object o=t.get(key).asObject();
-										binner.bin(key, o);
-									}
-								}
+				try(Session session=driver.session()){
+					while((row=csvReader.readNext())!=null){
+						// Print progress
+						String id=row[0];
+						String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
+						StatementResult result = session.run(query, parameters("id", id));
+						if(result.hasNext()){
+							logger.debug("\t{} Found!", id);
+							Record record = result.next();
+							Node t=record.get("t").asNode();
+							Iterable<String> keys = t.keys();
+							for(String key:keys){
+								if(key.equals("id"))
+									continue;
+								Object o=t.get(key).asObject();
+								binner.bin(key, o);
 							}
-							//WooHoo!
-							tx.success();  
-						}catch (ClientException e) {
-							e.printStackTrace();
-							logger.error("Error in getting walks: {}",  e.getMessage());
+						}
+						if(csvReader.getLinesRead()%1000==0){
+							logger.info("{} lines parsed to create bins from attributes.", csvReader.getLinesRead());
+						}
+						if(test && csvReader.getLinesRead()>10000){
+							break;
 						}
 					}
-					if(csvReader.getLinesRead()%1000==0){
-						logger.info("{} lines parsed to create bins from attributes.", csvReader.getLinesRead());
-					}
-
-					if(test && csvReader.getLinesRead()>10000){
-						break;
-					}
+				}catch (ClientException e) {
+					e.printStackTrace();
+					logger.error("Error in getting walks: {}",  e.getMessage());
 				}
 			}
 			// Close IO
@@ -143,38 +132,45 @@ public class Neo4J2DatasetFromOneHot{
 			}else{
 				//Read each line to get the id & then get random walks
 				String[] row=null;
-				while((row=csvReader.readNext())!=null){
-					// Print progress
-					String id=row[0];
-					List<StepType> allowedSteps=new ArrayList<>();
-//					allowedSteps.add(StepType.ATTRIBUTE_PRESENCE);
-					allowedSteps.add(StepType.ATTRIBUTE_VALUE);
-					Set<String> walks=neo4jRandomWalkGenerator.getWalks(id, allowedSteps, binner,1,5);
-					if(!walks.isEmpty()){
-						logger.debug("{} : {}", id, walks);
-						Set<String> ws = walks;
-						
-						Set<Integer> oneHotWs=randomWalks.get(id);
-						if(oneHotWs==null){
-							oneHotWs=new HashSet<>();
-							randomWalks.put(id, oneHotWs);
-						}
-						for(String w:ws){
-							Integer walkId=randomWalkIds.get(w);
-							if(walkId==null){
-								walkId=walkCounter++;
-								randomWalkIds.put(w, walkId);
-							}
-							oneHotWs.add(walkId);
-						}
+				try(Session session=driver.session()){
+					long start = System.currentTimeMillis();
+					while((row=csvReader.readNext())!=null){
+						// Print progress
+						String id=row[0];
+						List<StepType> allowedSteps=new ArrayList<>();
+						//					allowedSteps.add(StepType.ATTRIBUTE_PRESENCE);
+						//					allowedSteps.add(StepType.ATTRIBUTE_VALUE);
+						allowedSteps.add(StepType.HAS_RELATIONSHIP);
+						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,1,5);
+						if(!walks.isEmpty()){
+							logger.debug("{} : {}", id, walks);
+							Set<String> ws = walks;
 
+							Set<Integer> oneHotWs=randomWalks.get(id);
+							if(oneHotWs==null){
+								oneHotWs=new HashSet<>();
+								randomWalks.put(id, oneHotWs);
+							}
+							for(String w:ws){
+								Integer walkId=randomWalkIds.get(w);
+								if(walkId==null){
+									walkId=walkCounter++;
+									randomWalkIds.put(w, walkId);
+								}
+								oneHotWs.add(walkId);
+							}
+						}
+						if(csvReader.getLinesRead()%1000==0){
+							logger.info("{} lines parsed to random walk in {} ms.", csvReader.getLinesRead(), (System.currentTimeMillis()-start));
+							start = System.currentTimeMillis();
+						}
+						if(test && csvReader.getLinesRead()>10000){
+							break;
+						}
 					}
-					if(csvReader.getLinesRead()%1000==0){
-						logger.info("{} lines parsed to random walk.", csvReader.getLinesRead());
-					}
-					if(test && csvReader.getLinesRead()>10000){
-						break;
-					}
+				}catch (ClientException e) {
+					e.printStackTrace();
+					logger.error("Error in getting walks: {}",  e.getMessage());
 				}
 			}
 			// Close IO

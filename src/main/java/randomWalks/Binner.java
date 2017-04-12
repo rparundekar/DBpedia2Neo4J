@@ -30,7 +30,10 @@ public class Binner {
 	public void bin(String attribute, Object value) {
 		if(value instanceof String){
 			try{
-				value=Double.parseDouble(value.toString());
+				if(value.toString().equalsIgnoreCase("infinity"))
+					value=Double.MAX_VALUE;
+				else
+					value=Double.parseDouble(value.toString());
 			}catch(Exception e){
 			}
 		}
@@ -102,6 +105,8 @@ public class Binner {
 			}else{
 				return "outlier_s";
 			}
+		}else{
+			return null;
 		}
 		return value.toString().trim();
 	}
