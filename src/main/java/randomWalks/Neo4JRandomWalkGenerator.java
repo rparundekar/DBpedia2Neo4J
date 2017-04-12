@@ -28,9 +28,13 @@ public class Neo4JRandomWalkGenerator {
 
 	public Set<String> getWalks(String id, List<StepType> allowedTypes, Binner binner, int maxLength, int numberOfWalks) {
 		Set<String> walks=new HashSet<>();
+		List<Integer> lengthList = new ArrayList<>();
+		for(int i=1;i<=maxLength;i++)
+			for(int j=maxLength;j>=i;j--)
+				lengthList.add(i);
 		
 		for(int eachWalk=0;eachWalk<numberOfWalks;eachWalk++){
-			int lengthOfWalk = (int) Math.ceil(Math.random()*maxLength);
+			int lengthOfWalk = lengthList.get((int)Math.floor(Math.random()*lengthList.size()));
 			String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
 			try(Session session=driver.session()){
 				try (Transaction tx = session.beginTransaction())

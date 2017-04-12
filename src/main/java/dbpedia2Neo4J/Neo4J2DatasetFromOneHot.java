@@ -147,8 +147,8 @@ public class Neo4J2DatasetFromOneHot{
 					// Print progress
 					String id=row[0];
 					List<StepType> allowedSteps=new ArrayList<>();
-					allowedSteps.add(StepType.ATTRIBUTE_PRESENCE);
-//					allowedSteps.add(StepType.ATTRIBUTE_VALUE);
+//					allowedSteps.add(StepType.ATTRIBUTE_PRESENCE);
+					allowedSteps.add(StepType.ATTRIBUTE_VALUE);
 					Set<String> walks=neo4jRandomWalkGenerator.getWalks(id, allowedSteps, binner,1,5);
 					if(!walks.isEmpty()){
 						logger.debug("{} : {}", id, walks);
