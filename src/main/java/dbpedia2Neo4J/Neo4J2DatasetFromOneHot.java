@@ -73,55 +73,58 @@ public class Neo4J2DatasetFromOneHot{
 	 */
 	public void create(File oneHotCsv){
 		boolean test=false;
-		//First, we load the attribute values for binning numbers, etc.
-		try{
-			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
-			//Read the header
-			String[] header=csvReader.readNext();
-			if(!header[0].equals("id")){
-				logger.error("First column is not the id");
-			}else{
-				//Read each line to get the id & then get random walks
-				String[] row=null;
-				try(Session session=driver.session()){
-					while((row=csvReader.readNext())!=null){
-						// Print progress
-						String id=row[0];
-						String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
-						StatementResult result = session.run(query, parameters("id", id));
-						if(result.hasNext()){
-							logger.debug("\t{} Found!", id);
-							Record record = result.next();
-							Node t=record.get("t").asNode();
-							Iterable<String> keys = t.keys();
-							for(String key:keys){
-								if(key.equals("id"))
-									continue;
-								Object o=t.get(key).asObject();
-								binner.bin(key, o);
+		boolean createAttributeBins = false;
+		if(createAttributeBins){
+			//First, we load the attribute values for binning numbers, etc.
+			try{
+				CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
+				//Read the header
+				String[] header=csvReader.readNext();
+				if(!header[0].equals("id")){
+					logger.error("First column is not the id");
+				}else{
+					//Read each line to get the id & then get random walks
+					String[] row=null;
+					try(Session session=driver.session()){
+						while((row=csvReader.readNext())!=null){
+							// Print progress
+							String id=row[0];
+							String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
+							StatementResult result = session.run(query, parameters("id", id));
+							if(result.hasNext()){
+								logger.debug("\t{} Found!", id);
+								Record record = result.next();
+								Node t=record.get("t").asNode();
+								Iterable<String> keys = t.keys();
+								for(String key:keys){
+									if(key.equals("id"))
+										continue;
+									Object o=t.get(key).asObject();
+									binner.bin(key, o);
+								}
+							}
+							if(csvReader.getLinesRead()%1000==0){
+								logger.info("{} lines parsed to create bins from attributes.", csvReader.getLinesRead());
+							}
+							if(test && csvReader.getLinesRead()>10000){
+								break;
 							}
 						}
-						if(csvReader.getLinesRead()%1000==0){
-							logger.info("{} lines parsed to create bins from attributes.", csvReader.getLinesRead());
-						}
-						if(test && csvReader.getLinesRead()>10000){
-							break;
-						}
+					}catch (ClientException e) {
+						e.printStackTrace();
+						logger.error("Error in getting walks: {}",  e.getMessage());
 					}
-				}catch (ClientException e) {
-					e.printStackTrace();
-					logger.error("Error in getting walks: {}",  e.getMessage());
 				}
+				// Close IO
+				csvReader.close();
+			}catch(IOException e){
+				// Something went wrong with the files.
+				logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 			}
-			// Close IO
-			csvReader.close();
-		}catch(IOException e){
-			// Something went wrong with the files.
-			logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
+			//Build the bins and write to file
+			binner.buildBins();
+			binner.writeToFile(oneHotCsv.getParentFile());
 		}
-		//Build the bins and write to file
-		binner.buildBins();
-		binner.writeToFile(oneHotCsv.getParentFile());
 		//Then, we create the dataset using random walks.
 		try{
 			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
@@ -140,7 +143,8 @@ public class Neo4J2DatasetFromOneHot{
 						List<StepType> allowedSteps=new ArrayList<>();
 						//					allowedSteps.add(StepType.ATTRIBUTE_PRESENCE);
 						//					allowedSteps.add(StepType.ATTRIBUTE_VALUE);
-						allowedSteps.add(StepType.HAS_RELATIONSHIP);
+						//						allowedSteps.add(StepType.HAS_RELATIONSHIP);
+						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
 						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,1,5);
 						if(!walks.isEmpty()){
 							logger.debug("{} : {}", id, walks);
