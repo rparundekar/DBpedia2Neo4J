@@ -93,7 +93,9 @@ public class Binner {
 	}
 
 	public String getBin(String attribute, Object value){
-		if(this.bins.containsKey(attribute)){
+		if(attribute.equals("id"))
+			return value.toString();
+		else if(this.bins.containsKey(attribute)){
 			if(value instanceof String){
 				try{
 					value=Double.parseDouble(value.toString());
