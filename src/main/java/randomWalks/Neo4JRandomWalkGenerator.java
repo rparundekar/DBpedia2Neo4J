@@ -3,8 +3,10 @@ package randomWalks;
 import static org.neo4j.driver.v1.Values.parameters;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.neo4j.driver.v1.Record;
@@ -27,6 +29,9 @@ public class Neo4JRandomWalkGenerator {
 			for(int j=maxLength;j>=i;j--)
 				lengthList.add(i);
 
+		String previousNodeId=null;
+		Node previousNode=null;
+		
 		for(int eachWalk=0;eachWalk<numberOfWalks;eachWalk++){
 			int lengthOfWalk = lengthList.get((int)Math.floor(Math.random()*lengthList.size()));
 			String currentNodeId=id;
@@ -38,15 +43,20 @@ public class Neo4JRandomWalkGenerator {
 				case HAS_ATTRIBUTE:
 					//Find all attributes
 					List<String> attributes=new ArrayList<>();
-					String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
-					StatementResult result = session.run(query, parameters("id", currentNodeId));
-					if(result.hasNext()){
-						Node node = result.next().get("t").asNode();
-						for(String attr:node.keys()){
-							if(attr.equals("id"))
-								continue;
-							attributes.add(attr);
+					Node node = null;
+					if(previousNodeId!=null && currentNodeId.equals(previousNodeId)){
+						node=previousNode;
+					}else{
+						String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
+						StatementResult result = session.run(query, parameters("id", currentNodeId));
+						if(result.hasNext()){
+							 node = result.next().get("t").asNode();
 						}
+					}
+					for(String attr:node.keys()){
+						if(attr.equals("id"))
+							continue;
+						attributes.add(attr);
 					}
 					if(attributes.size()==0){
 						continue;
@@ -54,29 +64,36 @@ public class Neo4JRandomWalkGenerator {
 					String attribute=(String)attributes.get((int)(Math.random()*attributes.size()));
 					walk.append("has_" + attribute +",");
 					//Stay on same node
+					previousNodeId=currentNodeId;
+					previousNode=node;
 					break;
 				case ATTRIBUTE_VALUE:
 					//Find all attributes & values
 					List<String> attrValues=new ArrayList<>();
-					query = "MATCH (t:Thing) WHERE t.id = {id} return t";
-					result = session.run(query, parameters("id", currentNodeId));
-					if(result.hasNext()){
-						Node node = result.next().get("t").asNode();
-						for(String attr:node.keys()){
-							if(attr.equals("id"))
-								continue;
-							Object value=node.get(attr).asObject();
-							if(value instanceof List)
-							{
-								List<Object> list=node.get(attr).asList();
-								value=(int)(Math.random()*list.size());
-							}
-							String bin=binner.getBin(attr, value);
-							if(bin!=null)
-								attrValues.add(attr +"="+value.toString());
-							else
-								walk.append("has_" + attr);
+					node = null;
+					if(previousNodeId!=null && currentNodeId.equals(previousNodeId)){
+						node=previousNode;
+					}else{
+						String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
+						StatementResult result = session.run(query, parameters("id", currentNodeId));
+						if(result.hasNext()){
+							 node = result.next().get("t").asNode();
 						}
+					}
+					for(String attr:node.keys()){
+						if(currentNodeId.equals(id) && attr.equals("id"))
+							continue;
+						Object value=node.get(attr).asObject();
+						if(value instanceof List)
+						{
+							List<Object> list=node.get(attr).asList();
+							value=(int)(Math.random()*list.size());
+						}
+						String bin=binner.getBin(attr, value);
+						if(bin!=null)
+							attrValues.add(attr +"="+value.toString());
+						else
+							walk.append("has_" + attr);
 					}
 					if(attrValues.size()==0){
 						continue;
@@ -84,15 +101,19 @@ public class Neo4JRandomWalkGenerator {
 					String attrVal=(String)attrValues.get((int)(Math.random()*attrValues.size()));
 					walk.append(attrVal +",");
 					//Stay on same node
+					previousNodeId=currentNodeId;
+					previousNode=node;
 					break;
 				case HAS_RELATIONSHIP:
 					//Find all relationships
 					List<String> relationships=new ArrayList<>();
-					query = "MATCH (t:Thing)-[r]->() WHERE t.id = {id} return r";
-					result = session.run(query, parameters("id", currentNodeId));
+					String query = "MATCH (t:Thing)-[r]->() WHERE t.id = {id} return t,r";
+					StatementResult result = session.run(query, parameters("id", currentNodeId));
+					node=null;
 					while(result.hasNext()){
 						Record record = result.next();
 						Relationship relationship = record.get("r").asRelationship();
+						node = record.get("t").asNode();
 						if(!relationships.contains(relationship.type()))
 							relationships.add(relationship.type());
 					}
@@ -101,15 +122,19 @@ public class Neo4JRandomWalkGenerator {
 						walk.append("hasRel_" + relationship +",");
 					}
 					//Stay on same node
+					previousNodeId=currentNodeId;
+					previousNode=node;
 					break;
 				case HAS_INCOMING_RELATIONSHIP:
 					//Find all relationships
 					relationships=new ArrayList<>();
-					query = "MATCH ()-[r]->(t:Thing) WHERE t.id = {id} return r";
+					query = "MATCH ()-[r]->(t:Thing) WHERE t.id = {id} return t,r";
 					result = session.run(query, parameters("id", currentNodeId));
+					node=null;
 					while(result.hasNext()){
 						Record record = result.next();
 						Relationship relationship = record.get("r").asRelationship();
+						node = record.get("t").asNode();
 						if(!relationships.contains(relationship.type()))
 							relationships.add(relationship.type());
 					}
@@ -118,8 +143,11 @@ public class Neo4JRandomWalkGenerator {
 						walk.append("hasInRel_" + relationship +",");
 					}
 					//Stay on same node
+					previousNodeId=currentNodeId;
+					previousNode=node;
 					break;
 				}
+				
 			}
 			
 			if(!walks.contains(walk.toString()))
