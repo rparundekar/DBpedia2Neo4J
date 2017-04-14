@@ -83,8 +83,10 @@ public class Binner {
 					uniqueCount++;
 				}
 				double load = uniqueCount*1.0/countOfValues;
-				if(load<0.9){
+				logger.info("Attribute {} has load {} and {} counts", attribute, load, uniqueCount);
+				if(uniqueCount<10 || (load<0.2) ){
 					binByValue.add(attribute);
+					logger.info("\tCan bin");
 				}else{
 					//doNotBin
 				}

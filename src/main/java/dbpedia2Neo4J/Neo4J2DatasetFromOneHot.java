@@ -73,7 +73,7 @@ public class Neo4J2DatasetFromOneHot{
 	 */
 	public void create(File oneHotCsv){
 		boolean test=false;
-		boolean createAttributeBins = true;
+		boolean createAttributeBins = false;
 		if(createAttributeBins){
 			//First, we load the attribute values for binning numbers, etc.
 			try{
@@ -141,10 +141,10 @@ public class Neo4J2DatasetFromOneHot{
 						// Print progress
 						String id=row[0];
 						List<StepType> allowedSteps=new ArrayList<>();
-//						allowedSteps.add(StepType.HAS_ATTRIBUTE);
-						allowedSteps.add(StepType.ATTRIBUTE_VALUE);
-//						allowedSteps.add(StepType.HAS_RELATIONSHIP);
-//						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
+						allowedSteps.add(StepType.HAS_ATTRIBUTE);
+//						allowedSteps.add(StepType.ATTRIBUTE_VALUE);
+						allowedSteps.add(StepType.HAS_RELATIONSHIP);
+						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
 						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,1,5);
 						if(!walks.isEmpty()){
 							logger.debug("{} : {}", id, walks);
