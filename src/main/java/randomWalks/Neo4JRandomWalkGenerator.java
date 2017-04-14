@@ -158,7 +158,7 @@ public class Neo4JRandomWalkGenerator {
 
 			}
 
-			String w = walk.toString();
+			String w = walk.toString().trim();
 			if(w.endsWith(","))
 				w=w.substring(0, w.length()-1);
 			if(!walks.contains(w) && !w.isEmpty())

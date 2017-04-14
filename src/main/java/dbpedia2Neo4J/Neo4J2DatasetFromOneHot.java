@@ -240,7 +240,7 @@ public class Neo4J2DatasetFromOneHot{
 			//file for the walks and a dataset file for the classes.
 			String[] row=null;
 			int batch=0;
-			int batchSize=20000;
+			int batchSize=10000;
 			while((row=csvReader.readNext())!=null){
 				long linesRead = csvReader.getLinesRead();
 				if(linesRead>(batch*batchSize)){
@@ -270,7 +270,7 @@ public class Neo4J2DatasetFromOneHot{
 				String id=row[0];
 				if(!randomWalks.containsKey(id))
 					continue;
-				String[] oneHotWalksRow= new String[walkCounter];
+//				String[] oneHotWalksRow= new String[walkCounter];
 				int[] walks=randomWalks.get(id);
 				String r = Arrays.toString(walks);
 				r=r.substring(1, r.length()-1).trim();
