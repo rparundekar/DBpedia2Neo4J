@@ -7,6 +7,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -228,7 +229,9 @@ public class Neo4J2DatasetFromOneHot{
 				headersX.flush();
 			}
 			headersX.close();
-			CSVWriter datasetXWriter=null;
+			
+//			CSVWriter datasetXWriter=null;
+			PrintWriter sparseDataXWriter=null;
 			File folder = new File(oneHotCsv.getParentFile(), "dataset");
 			if(!folder.exists())
 				folder.mkdir();
@@ -249,11 +252,19 @@ public class Neo4J2DatasetFromOneHot{
 					datasetYWriter.writeNext(newHeader);
 					datasetYWriter.flush();
 
-					if(datasetXWriter!=null)
-						datasetXWriter.close();
-					datasetXWriter=new CSVWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-					datasetXWriter.writeNext(shortOneHotWalksHeader);
-					datasetXWriter.flush();
+					if(sparseDataXWriter!=null)
+						sparseDataXWriter.close();
+					sparseDataXWriter=new PrintWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")));
+					String head=Arrays.toString(shortOneHotWalksHeader);
+					head=head.substring(1,head.length()-1).trim();
+					sparseDataXWriter.println(head);
+					sparseDataXWriter.flush();
+					
+//					if(datasetXWriter!=null)
+//						datasetXWriter.close();
+//					datasetXWriter=new CSVWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
+//					datasetXWriter.writeNext(shortOneHotWalksHeader);
+//					datasetXWriter.flush();
 				}
 				// Print progress
 				String id=row[0];
@@ -261,22 +272,26 @@ public class Neo4J2DatasetFromOneHot{
 					continue;
 				String[] oneHotWalksRow= new String[walkCounter];
 				int[] walks=randomWalks.get(id);
-				Set<Integer> set = new HashSet<>();
-				for(int k=0;k<NUMBER_OF_WALKS;k++)
-				{
-					if(walks[k]==-1)
-						continue;
-					set.add(walks[k]);
-				}
-				oneHotWalksRow[0]=id;
-				for(int j=1;j<walkCounter;j++){
-					if(set.contains(j))
-						oneHotWalksRow[j]="1";
-					else
-						oneHotWalksRow[j]="0";
-				}
-				datasetXWriter.writeNext(oneHotWalksRow);
-				datasetXWriter.flush();
+				String r = Arrays.toString(walks);
+				r=r.substring(1, r.length()-1).trim();
+//				Set<Integer> set = new HashSet<>();
+//				for(int k=0;k<NUMBER_OF_WALKS;k++)
+//				{
+//					if(walks[k]==-1)
+//						continue;
+//					set.add(walks[k]);
+//				}
+//				oneHotWalksRow[0]=id;
+//				for(int j=1;j<walkCounter;j++){
+//					if(set.contains(j))
+//						oneHotWalksRow[j]="1";
+//					else
+//						oneHotWalksRow[j]="0";
+//				}
+				sparseDataXWriter.println(id + "," + r);
+				sparseDataXWriter.flush();
+//				datasetXWriter.writeNext(oneHotWalksRow);
+//				datasetXWriter.flush();
 
 				datasetYWriter.writeNext(row);
 				datasetYWriter.flush();
@@ -291,7 +306,7 @@ public class Neo4J2DatasetFromOneHot{
 			}
 			csvReader.close();
 			datasetYWriter.close();
-			datasetXWriter.close();
+			sparseDataXWriter.close();
 		}catch(IOException e){
 			// Something went wrong with the files.
 			logger.error("Cannot write data to dataset file due to file issue:" + e.getMessage());
