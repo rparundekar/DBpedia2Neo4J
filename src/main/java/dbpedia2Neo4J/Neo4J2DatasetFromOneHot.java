@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.apache.jena.base.Sys;
 import org.neo4j.driver.v1.AuthTokens;
 import org.neo4j.driver.v1.Driver;
 import org.neo4j.driver.v1.GraphDatabase;
@@ -48,7 +49,7 @@ public class Neo4J2DatasetFromOneHot{
 	private int walkCounter=1;
 	private final int MAX_LENGTH=1;
 	private final int NUMBER_OF_WALKS=15;
-	
+
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
 	private Binner binner;
@@ -146,10 +147,18 @@ public class Neo4J2DatasetFromOneHot{
 						String id=row[0];
 						List<StepType> allowedSteps=new ArrayList<>();
 						allowedSteps.add(StepType.HAS_ATTRIBUTE);
-//						allowedSteps.add(StepType.ATTRIBUTE_VALUE);
 						allowedSteps.add(StepType.HAS_RELATIONSHIP);
 						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
+						allowedSteps.add(StepType.RELATIONSHIP_STEP);
+						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
+
+//						long s=System.currentTimeMillis();
 						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,MAX_LENGTH,NUMBER_OF_WALKS);
+//						if((System.currentTimeMillis()-s)>10)
+//						{
+//							System.err.println("Time: " + (System.currentTimeMillis()-s));
+//							System.err.println("Walks: " + walks);
+//						}
 						if(!walks.isEmpty()){
 							logger.debug("{} : {}", id, walks);
 							Set<String> ws = walks;
@@ -229,8 +238,8 @@ public class Neo4J2DatasetFromOneHot{
 				headersX.flush();
 			}
 			headersX.close();
-			
-//			CSVWriter datasetXWriter=null;
+
+			//			CSVWriter datasetXWriter=null;
 			PrintWriter sparseDataXWriter=null;
 			File folder = new File(oneHotCsv.getParentFile(), "dataset");
 			if(!folder.exists())
@@ -259,39 +268,39 @@ public class Neo4J2DatasetFromOneHot{
 					head=head.substring(1,head.length()-1).trim();
 					sparseDataXWriter.println(head);
 					sparseDataXWriter.flush();
-					
-//					if(datasetXWriter!=null)
-//						datasetXWriter.close();
-//					datasetXWriter=new CSVWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-//					datasetXWriter.writeNext(shortOneHotWalksHeader);
-//					datasetXWriter.flush();
+
+					//					if(datasetXWriter!=null)
+					//						datasetXWriter.close();
+					//					datasetXWriter=new CSVWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
+					//					datasetXWriter.writeNext(shortOneHotWalksHeader);
+					//					datasetXWriter.flush();
 				}
 				// Print progress
 				String id=row[0];
 				if(!randomWalks.containsKey(id))
 					continue;
-//				String[] oneHotWalksRow= new String[walkCounter];
+				//				String[] oneHotWalksRow= new String[walkCounter];
 				int[] walks=randomWalks.get(id);
 				String r = Arrays.toString(walks);
 				r=r.substring(1, r.length()-1).trim();
-//				Set<Integer> set = new HashSet<>();
-//				for(int k=0;k<NUMBER_OF_WALKS;k++)
-//				{
-//					if(walks[k]==-1)
-//						continue;
-//					set.add(walks[k]);
-//				}
-//				oneHotWalksRow[0]=id;
-//				for(int j=1;j<walkCounter;j++){
-//					if(set.contains(j))
-//						oneHotWalksRow[j]="1";
-//					else
-//						oneHotWalksRow[j]="0";
-//				}
+				//				Set<Integer> set = new HashSet<>();
+				//				for(int k=0;k<NUMBER_OF_WALKS;k++)
+				//				{
+				//					if(walks[k]==-1)
+				//						continue;
+				//					set.add(walks[k]);
+				//				}
+				//				oneHotWalksRow[0]=id;
+				//				for(int j=1;j<walkCounter;j++){
+				//					if(set.contains(j))
+				//						oneHotWalksRow[j]="1";
+				//					else
+				//						oneHotWalksRow[j]="0";
+				//				}
 				sparseDataXWriter.println(id + "," + r);
 				sparseDataXWriter.flush();
-//				datasetXWriter.writeNext(oneHotWalksRow);
-//				datasetXWriter.flush();
+				//				datasetXWriter.writeNext(oneHotWalksRow);
+				//				datasetXWriter.flush();
 
 				datasetYWriter.writeNext(row);
 				datasetYWriter.flush();
