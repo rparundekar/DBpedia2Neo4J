@@ -48,7 +48,7 @@ public class Neo4J2DatasetFromOneHot{
 	private final Map<String, Integer> randomWalkIds;
 	private int walkCounter=1;
 	private final int MAX_LENGTH=1;
-	private final int NUMBER_OF_WALKS=10;
+	private final int NUMBER_OF_WALKS=800;
 
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
@@ -146,14 +146,15 @@ public class Neo4J2DatasetFromOneHot{
 						// Print progress
 						String id=row[0];
 						List<StepType> allowedSteps=new ArrayList<>();
-						allowedSteps.add(StepType.HAS_ATTRIBUTE);
+//						allowedSteps.add(StepType.HAS_ATTRIBUTE);
 						allowedSteps.add(StepType.HAS_RELATIONSHIP);
-						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
+//						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
 //						allowedSteps.add(StepType.RELATIONSHIP_STEP);
 //						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
 
 //						long s=System.currentTimeMillis();
-						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,MAX_LENGTH,NUMBER_OF_WALKS);
+//						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,MAX_LENGTH,NUMBER_OF_WALKS);
+						Set<String> walks=neo4jRandomWalkGenerator.getAll(session, id, allowedSteps, binner);
 //						if((System.currentTimeMillis()-s)>10)
 //						{
 //							System.err.println("Time: " + (System.currentTimeMillis()-s));
@@ -178,6 +179,8 @@ public class Neo4J2DatasetFromOneHot{
 									walkId=walkCounter++;
 									randomWalkIds.put(w, walkId);
 								}
+								if(oneHotWs==null)
+									System.err.println("Here");
 								oneHotWs[counter]=walkId;
 								counter++;
 							}

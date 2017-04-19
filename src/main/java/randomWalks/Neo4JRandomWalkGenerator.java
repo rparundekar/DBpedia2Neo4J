@@ -62,7 +62,7 @@ public class Neo4JRandomWalkGenerator {
 							}
 						}
 					}
-					if((allowedTypes.contains(StepType.HAS_RELATIONSHIP)||allowedTypes.contains(StepType.HAS_RELATIONSHIP))){
+					if((allowedTypes.contains(StepType.HAS_RELATIONSHIP)||allowedTypes.contains(StepType.RELATIONSHIP_STEP))){
 						String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return t,r,o";
 						StatementResult result = session.run(query, parameters("id", currentNodeId));
 						Node node=null;
@@ -135,6 +135,70 @@ public class Neo4JRandomWalkGenerator {
 			if(!walks.contains(w) && !w.isEmpty())
 				walks.add(w);
 
+		}
+		return walks;
+	}
+
+
+	public Set<String> getAll(Session session, String id, List<StepType> allowedTypes, Binner binner) {
+		Set<String> walks=new HashSet<>();
+
+		String currentNodeId=id;
+		List<String> availableSteps = null;
+		availableSteps = new ArrayList<String>();
+		if(allowedTypes.contains(StepType.HAS_ATTRIBUTE)){
+			Node node = null;
+			String query = "MATCH (t:Thing {id:'"+ id +"'}) return t";
+			StatementResult result = session.run(query, parameters("id", currentNodeId));
+			if(result.hasNext()){
+				node = result.next().get("t").asNode();
+			}
+			if(node!=null){
+				for(String attr:node.keys()){
+					if(attr.equals("id"))
+						continue;
+					String s="has_" + attr+",";
+					if(!availableSteps.contains(s)){
+						availableSteps.add(s);
+					}
+				}
+			}
+		}
+		if((allowedTypes.contains(StepType.HAS_RELATIONSHIP))){
+			String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return t,r,o";
+			StatementResult result = session.run(query, parameters("id", currentNodeId));
+			while(result.hasNext()){
+				Record record = result.next();
+				Relationship relationship = record.get("r").asRelationship();
+				String s="hasRel_" + relationship.type() +",";
+				if(!availableSteps.contains(s)){
+					availableSteps.add(s);
+				}
+			}
+		}
+		if((allowedTypes.contains(StepType.HAS_INCOMING_RELATIONSHIP))){
+			String query = "MATCH (o:Thing)-[r]->(t:Thing {id:'"+ id +"'}) return t,r,o";
+			StatementResult result = session.run(query, parameters("id", currentNodeId));
+			while(result.hasNext()){
+				Record record = result.next();
+				Relationship relationship = record.get("r").asRelationship();
+
+				String s="hasInRel_" + relationship.type()+",";
+				if(!availableSteps.contains(s)){
+					availableSteps.add(s);
+				}
+			}
+		}
+
+		for(String walk:availableSteps){
+			String w = walk.toString().trim();
+			if(w.endsWith(","))
+				w=w.substring(0, w.length()-1);
+			else if(w.endsWith("->") || w.endsWith("<-"))
+				w+="id="+currentNodeId;
+
+			if(!walks.contains(w) && !w.isEmpty())
+				walks.add(w);
 		}
 		return walks;
 	}
