@@ -48,7 +48,7 @@ public class Neo4J2DatasetFromOneHot{
 	private final Map<String, Integer> randomWalkIds;
 	private int walkCounter=1;
 	private final int MAX_LENGTH=1;
-	private final int NUMBER_OF_WALKS=15;
+	private final int NUMBER_OF_WALKS=10;
 
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
@@ -149,8 +149,8 @@ public class Neo4J2DatasetFromOneHot{
 						allowedSteps.add(StepType.HAS_ATTRIBUTE);
 						allowedSteps.add(StepType.HAS_RELATIONSHIP);
 						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
-						allowedSteps.add(StepType.RELATIONSHIP_STEP);
-						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
+//						allowedSteps.add(StepType.RELATIONSHIP_STEP);
+//						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
 
 //						long s=System.currentTimeMillis();
 						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,MAX_LENGTH,NUMBER_OF_WALKS);
