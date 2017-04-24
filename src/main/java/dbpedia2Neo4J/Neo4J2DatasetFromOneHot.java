@@ -24,13 +24,14 @@ import org.neo4j.driver.v1.StatementResult;
 import org.neo4j.driver.v1.Transaction;
 import org.neo4j.driver.v1.exceptions.ClientException;
 import org.neo4j.driver.v1.types.Node;
+import org.neo4j.driver.v1.types.Relationship;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 
-import randomWalks.Binner;
+import randomWalks.RelationshipLoadChecker;
 import randomWalks.Neo4JRandomWalkGenerator;
 import randomWalks.StepType;
 
@@ -40,19 +41,18 @@ import randomWalks.StepType;
  * @author rparundekar
  */
 public class Neo4J2DatasetFromOneHot{
+	private static final int TEST_LINES = 3100;
 	// SLF4J Logger bound to Log4J 
 	private static final Logger logger=LoggerFactory.getLogger(Neo4J2DatasetFromOneHot.class);
 	// Driver object created once for the connection
 	private final Driver driver;
-	private final Map<String,int[]> randomWalks;
-	private final Map<String, Integer> randomWalkIds;
-	private int walkCounter=1;
-	private final int MAX_LENGTH=1;
-	private final int NUMBER_OF_WALKS=800;
+	private final Map<String,Map<String,int[]>> allRandomWalks;
+	private final Map<String,Map<String,Integer>> allRandomWalkIds;
+	private final Map<String,Integer> walkCounters; 
 
 	// Random Walks Generator
 	private final Neo4JRandomWalkGenerator neo4jRandomWalkGenerator;
-	private Binner binner;
+	private RelationshipLoadChecker binner;
 	/**
 	 * Create a new connection object to Neo4J, to the existing database
 	 * @param neo4jUsername Username for Neo4J
@@ -65,70 +65,67 @@ public class Neo4J2DatasetFromOneHot{
 		driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic( neo4jUsername, neo4jPassword) );
 		//Create the random walk generator
 		neo4jRandomWalkGenerator=new Neo4JRandomWalkGenerator();
-		binner=new Binner();
-		randomWalks=new HashMap<>();
-		randomWalkIds=new HashMap<>();
+		allRandomWalks=new HashMap<>();
+		allRandomWalkIds=new HashMap<>();
+		walkCounters=new HashMap<>();
 		logger.info("...Done");
 	}
 
 	/**
 	 * Create the dataset from onehot csv file 
 	 * @param oneHotCsv The onehot csv file 
+	 * @param dataset 
 	 */
-	public void create(File oneHotCsv){
+	public void create(File oneHotCsv, String datasetName){
+		binner=new RelationshipLoadChecker(oneHotCsv.getParentFile());
 		boolean test=false;
-		boolean createAttributeBins = false;
-		if(createAttributeBins){
-			//First, we load the attribute values for binning numbers, etc.
-			try{
-				CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
-				//Read the header
-				String[] header=csvReader.readNext();
-				if(!header[0].equals("id")){
-					logger.error("First column is not the id");
-				}else{
-					//Read each line to get the id & then get random walks
-					String[] row=null;
-					try(Session session=driver.session()){
-						while((row=csvReader.readNext())!=null){
-							// Print progress
-							String id=row[0];
-							String query = "MATCH (t:Thing) WHERE t.id = {id} return t";
-							StatementResult result = session.run(query, parameters("id", id));
-							if(result.hasNext()){
-								logger.debug("\t{} Found!", id);
-								Record record = result.next();
-								Node t=record.get("t").asNode();
-								Iterable<String> keys = t.keys();
-								for(String key:keys){
-									if(key.equals("id"))
-										continue;
-									Object o=t.get(key).asObject();
-									binner.bin(key, o);
+		boolean createRelationshipBins = true;
+		if(createRelationshipBins){
+				//First, we load the relationships for binning, etc.
+				try{
+					CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
+					//Read the header
+					String[] header=csvReader.readNext();
+					if(!header[0].equals("id")){
+						logger.error("First column is not the id");
+					}else{
+						//Read each line to get the id & then get random walks
+						String[] row=null;
+						try(Session session=driver.session()){
+							while((row=csvReader.readNext())!=null){
+								// Print progress
+								String id=row[0];
+								String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return t,r,o";
+								StatementResult result = session.run(query);
+								if(result.hasNext()){
+									logger.debug("\t{} Found!", id);
+									Record record = result.next();
+									Relationship relationship = record.get("r").asRelationship();
+									Node otherNode=record.get("o").asNode();
+									binner.bin(relationship.type(), otherNode.get("id").asObject().toString());
+								}
+								if(csvReader.getLinesRead()%1000==0){
+									logger.info("{} lines parsed to create bins from relationships.", csvReader.getLinesRead());
+								}
+								if(test && csvReader.getLinesRead()>TEST_LINES){
+									break;
 								}
 							}
-							if(csvReader.getLinesRead()%1000==0){
-								logger.info("{} lines parsed to create bins from attributes.", csvReader.getLinesRead());
-							}
-							if(test && csvReader.getLinesRead()>10000){
-								break;
-							}
+						}catch (ClientException e) {
+							e.printStackTrace();
+							logger.error("Error in getting walks: {}",  e.getMessage());
 						}
-					}catch (ClientException e) {
-						e.printStackTrace();
-						logger.error("Error in getting walks: {}",  e.getMessage());
 					}
+					// Close IO
+					csvReader.close();
+				}catch(IOException e){
+					// Something went wrong with the files.
+					logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 				}
-				// Close IO
-				csvReader.close();
-			}catch(IOException e){
-				// Something went wrong with the files.
-				logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
-			}
-			//Build the bins and write to file
-			binner.buildBins();
-			binner.writeToFile(oneHotCsv.getParentFile());
 		}
+		//Build the bins and write to file
+		binner.buildBins();
+		
 		//Then, we create the dataset using random walks.
 		try{
 			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
@@ -146,50 +143,79 @@ public class Neo4J2DatasetFromOneHot{
 						// Print progress
 						String id=row[0];
 						List<StepType> allowedSteps=new ArrayList<>();
-//						allowedSteps.add(StepType.HAS_ATTRIBUTE);
+						allowedSteps.add(StepType.HAS_ATTRIBUTE);
 						allowedSteps.add(StepType.HAS_RELATIONSHIP);
-//						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
-//						allowedSteps.add(StepType.RELATIONSHIP_STEP);
-//						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
+						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
+						allowedSteps.add(StepType.RELATIONSHIP_STEP);
+						//						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
 
-//						long s=System.currentTimeMillis();
-//						Set<String> walks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,MAX_LENGTH,NUMBER_OF_WALKS);
-						Set<String> walks=neo4jRandomWalkGenerator.getAll(session, id, allowedSteps, binner);
-//						if((System.currentTimeMillis()-s)>10)
-//						{
-//							System.err.println("Time: " + (System.currentTimeMillis()-s));
-//							System.err.println("Walks: " + walks);
-//						}
-						if(!walks.isEmpty()){
-							logger.debug("{} : {}", id, walks);
-							Set<String> ws = walks;
 
-							int[] oneHotWs=randomWalks.get(id);
-							if(oneHotWs==null){
-								oneHotWs=new int[NUMBER_OF_WALKS];
-								for(int i=0;i<oneHotWs.length;i++){
-									oneHotWs[i]=-1;
+						List<Integer> maxLengths = new ArrayList<>();
+												maxLengths.add(1);
+												maxLengths.add(2);
+												//maxLengths.add(3);
+					
+//						maxLengths.add(5);
+//						maxLengths.add(7);
+
+						List<Integer> numbersOfWalks = new ArrayList<>();
+						numbersOfWalks.add(5);
+						numbersOfWalks.add(10);
+						numbersOfWalks.add(15);
+
+						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,maxLengths, numbersOfWalks);
+						//						Set<String> walks=neo4jRandomWalkGenerator.getAll(session, id, allowedSteps, binner);
+						for(String dataset:allWalks.keySet()){
+							Set<String> walks=allWalks.get(dataset);
+							if(!walks.isEmpty()){
+								logger.debug("{} : {}", id, walks.size());
+								Set<String> ws = walks;
+								Map<String, int[]> randomWalks = allRandomWalks.get(dataset);
+								if(randomWalks==null)
+								{
+									randomWalks=new HashMap<>();
+									allRandomWalks.put(dataset, randomWalks);
 								}
-								randomWalks.put(id, oneHotWs);
-							}
-							int counter=0;
-							for(String w:ws){
-								Integer walkId=randomWalkIds.get(w);
-								if(walkId==null){
-									walkId=walkCounter++;
-									randomWalkIds.put(w, walkId);
+								Map<String, Integer> randomWalkIds = allRandomWalkIds.get(dataset);
+								if(randomWalkIds==null)
+								{
+									randomWalkIds=new HashMap<>();
+									allRandomWalkIds.put(dataset, randomWalkIds);
 								}
-								if(oneHotWs==null)
-									System.err.println("Here");
-								oneHotWs[counter]=walkId;
-								counter++;
+								if(!walkCounters.containsKey(dataset))
+									walkCounters.put(dataset, 1);
+
+								int walkCounter=walkCounters.get(dataset);
+
+								int[] oneHotWs=randomWalks.get(id);
+								if(oneHotWs==null){
+									oneHotWs=new int[ws.size()];
+									for(int i=0;i<oneHotWs.length;i++){
+										oneHotWs[i]=-1;
+									}
+									randomWalks.put(id, oneHotWs);
+								}
+								int counter=0;
+								for(String w:ws){
+									Integer walkId=randomWalkIds.get(w);
+									if(walkId==null){
+										walkId=walkCounter++;
+										randomWalkIds.put(w, walkId);
+									}
+									if(oneHotWs==null)
+										System.err.println("Here");
+									oneHotWs[counter]=walkId;
+									counter++;
+								}
+
+								walkCounters.put(dataset, walkCounter);
 							}
 						}
 						if(csvReader.getLinesRead()%1000==0){
 							logger.info("{} lines parsed to random walk in {} ms.", csvReader.getLinesRead(), (System.currentTimeMillis()-start));
 							start = System.currentTimeMillis();
 						}
-						if(test && csvReader.getLinesRead()>10000){
+						if(test && csvReader.getLinesRead()>TEST_LINES){
 							break;
 						}
 					}
@@ -205,123 +231,116 @@ public class Neo4J2DatasetFromOneHot{
 			logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 		}
 
-		try{
-			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
-			//Read the header
-			String[] header=csvReader.readNext();
-			String[] newHeader=new String[header.length];
-			PrintWriter headersX=new PrintWriter(new File(oneHotCsv.getParentFile(),"headerX.csv"));
-			PrintWriter headersY=new PrintWriter(new File(oneHotCsv.getParentFile(),"headerY.csv"));
+		for(String dataset:allRandomWalks.keySet()){
+			try{
+				File datasetFolder=new File(oneHotCsv.getParentFile(),datasetName+"_"+dataset);
+				datasetFolder.mkdir();
 
-			headersY.println("header, short");
-			for(int i=0;i<newHeader.length;i++){
-				newHeader[i]="class_"+i;
-			}
-			newHeader[0]="id";
-			for(int i=0;i<newHeader.length;i++){
-				headersY.println(header[i]+","+newHeader[i]);
-				headersY.flush();
-			}
-			headersY.close();
+				CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
+				//Read the header
+				String[] header=csvReader.readNext();
+				String[] newHeader=new String[header.length];
+				PrintWriter headersX=new PrintWriter(new File(datasetFolder,"headerX.csv"));
+				PrintWriter headersY=new PrintWriter(new File(datasetFolder,"headerY.csv"));
+
+				headersY.println("header, short");
+				for(int i=0;i<newHeader.length;i++){
+					newHeader[i]="c"+i;
+				}
+				newHeader[0]="id";
+				for(int i=0;i<newHeader.length;i++){
+					headersY.println(header[i]+","+newHeader[i]);
+					headersY.flush();
+				}
+				headersY.close();
 
 
-			CSVWriter datasetYWriter=null;
+				CSVWriter datasetYWriter=null;
+				int walkCounter=walkCounters.get(dataset);
+				Map<String, int[]> randomWalks = allRandomWalks.get(dataset);
+				Map<String, Integer> randomWalkIds = allRandomWalkIds.get(dataset);
 
-			String[] oneHotWalksHeader= new String[walkCounter];
-			String[] shortOneHotWalksHeader= new String[walkCounter];
-			oneHotWalksHeader[0]="id";
-			shortOneHotWalksHeader[0]="id";
-			for(String oneHotWalk:randomWalkIds.keySet()){
-				oneHotWalksHeader[randomWalkIds.get(oneHotWalk)]=oneHotWalk;
-				shortOneHotWalksHeader[randomWalkIds.get(oneHotWalk)]="walk_"+(randomWalkIds.get(oneHotWalk));
-			}
-			headersX.println("header, short");
-			for(int i=0;i<oneHotWalksHeader.length;i++){
-				headersX.println(oneHotWalksHeader[i]+","+shortOneHotWalksHeader[i]);
-				headersX.flush();
-			}
-			headersX.close();
+				String[] oneHotWalksHeader= new String[walkCounter];
+				String[] shortOneHotWalksHeader= new String[walkCounter];
+				oneHotWalksHeader[0]="id";
+				shortOneHotWalksHeader[0]="id";
+				for(String oneHotWalk:randomWalkIds.keySet()){
+					oneHotWalksHeader[randomWalkIds.get(oneHotWalk)]=oneHotWalk;
+					shortOneHotWalksHeader[randomWalkIds.get(oneHotWalk)]="walk_"+(randomWalkIds.get(oneHotWalk));
+				}
+				headersX.println("header, short");
+				for(int i=0;i<oneHotWalksHeader.length;i++){
+					headersX.println(oneHotWalksHeader[i]+","+shortOneHotWalksHeader[i]);
+					headersX.flush();
+				}
+				headersX.close();
 
-			//			CSVWriter datasetXWriter=null;
-			PrintWriter sparseDataXWriter=null;
-			File folder = new File(oneHotCsv.getParentFile(), "dataset");
-			if(!folder.exists())
-				folder.mkdir();
+				PrintWriter sparseDataXWriter=null;
+				File folder = new File(datasetFolder, "dataset");
+				if(!folder.exists())
+					folder.mkdir();
 
-			//Read each line to get the id & then get random walks & create a dataset 
-			//file for the walks and a dataset file for the classes.
-			String[] row=null;
-			int batch=0;
-			int batchSize=10000;
-			while((row=csvReader.readNext())!=null){
-				long linesRead = csvReader.getLinesRead();
-				if(linesRead>(batch*batchSize)){
-					batch++;
+				//Read each line to get the id & then get random walks & create a dataset 
+				//file for the walks and a dataset file for the classes.
+				String[] row=null;
+				int batch=0;
+				int batchSize=2000;
+				while((row=csvReader.readNext())!=null){
+					long linesRead = csvReader.getLinesRead();
+					if(linesRead>(batch*batchSize)){
+						batch++;
 
-					if(datasetYWriter!=null)
-						datasetYWriter.close();
-					datasetYWriter=new CSVWriter(new FileWriter(new File(folder,"datasetY_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-					datasetYWriter.writeNext(newHeader);
-					datasetYWriter.flush();
+						if(datasetYWriter!=null)
+							datasetYWriter.close();
+						datasetYWriter=new CSVWriter(new FileWriter(new File(folder,"datasetY_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
+						datasetYWriter.writeNext(newHeader);
+						datasetYWriter.flush();
 
-					if(sparseDataXWriter!=null)
-						sparseDataXWriter.close();
-					sparseDataXWriter=new PrintWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")));
-					String head=Arrays.toString(shortOneHotWalksHeader);
-					head=head.substring(1,head.length()-1).trim();
-					sparseDataXWriter.println(head);
+						if(sparseDataXWriter!=null)
+							sparseDataXWriter.close();
+						sparseDataXWriter=new PrintWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")));
+						String head=Arrays.toString(shortOneHotWalksHeader);
+						head=head.substring(1,head.length()-1).trim();
+						sparseDataXWriter.println(head);
+						sparseDataXWriter.flush();
+
+					}
+					// Print progress
+					String id=row[0];
+					if(!randomWalks.containsKey(id))
+						continue;
+					int[] walks=randomWalks.get(id);
+					Set<Integer> set = new HashSet<>();
+					for(int k=0;k<walks.length;k++)
+					{
+						if(walks[k]==-1)
+							continue;
+						set.add(walks[k]);
+					}
+
+					String r = set.toString();
+					r=r.substring(1, r.length()-1).trim();
+					sparseDataXWriter.println(id + "," + r);
 					sparseDataXWriter.flush();
 
-					//					if(datasetXWriter!=null)
-					//						datasetXWriter.close();
-					//					datasetXWriter=new CSVWriter(new FileWriter(new File(folder,"datasetX_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
-					//					datasetXWriter.writeNext(shortOneHotWalksHeader);
-					//					datasetXWriter.flush();
-				}
-				// Print progress
-				String id=row[0];
-				if(!randomWalks.containsKey(id))
-					continue;
-				//				String[] oneHotWalksRow= new String[walkCounter];
-				int[] walks=randomWalks.get(id);
-				String r = Arrays.toString(walks);
-				r=r.substring(1, r.length()-1).trim();
-				//				Set<Integer> set = new HashSet<>();
-				//				for(int k=0;k<NUMBER_OF_WALKS;k++)
-				//				{
-				//					if(walks[k]==-1)
-				//						continue;
-				//					set.add(walks[k]);
-				//				}
-				//				oneHotWalksRow[0]=id;
-				//				for(int j=1;j<walkCounter;j++){
-				//					if(set.contains(j))
-				//						oneHotWalksRow[j]="1";
-				//					else
-				//						oneHotWalksRow[j]="0";
-				//				}
-				sparseDataXWriter.println(id + "," + r);
-				sparseDataXWriter.flush();
-				//				datasetXWriter.writeNext(oneHotWalksRow);
-				//				datasetXWriter.flush();
-
-				datasetYWriter.writeNext(row);
-				datasetYWriter.flush();
+					datasetYWriter.writeNext(row);
+					datasetYWriter.flush();
 
 
-				if(csvReader.getLinesRead()%1000==0){
-					logger.info("{} lines parsed to create the final dataset.", csvReader.getLinesRead());
+					if(csvReader.getLinesRead()%10000==0){
+						logger.info("{} lines parsed to create the final dataset.", csvReader.getLinesRead());
+					}
+					if(test && csvReader.getLinesRead()>TEST_LINES){
+						break;
+					}
 				}
-				if(test && csvReader.getLinesRead()>10000){
-					break;
-				}
+				csvReader.close();
+				datasetYWriter.close();
+				sparseDataXWriter.close();
+			}catch(IOException e){
+				// Something went wrong with the files.
+				logger.error("Cannot write data to dataset file due to file issue:" + e.getMessage());
 			}
-			csvReader.close();
-			datasetYWriter.close();
-			sparseDataXWriter.close();
-		}catch(IOException e){
-			// Something went wrong with the files.
-			logger.error("Cannot write data to dataset file due to file issue:" + e.getMessage());
 		}
 	}
 
@@ -332,7 +351,7 @@ public class Neo4J2DatasetFromOneHot{
 	 */
 	public static void main(String[] args){
 		Neo4J2DatasetFromOneHot loadFile = new Neo4J2DatasetFromOneHot("neo4j", "icd");
-		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/oneHot.csv"));
+		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/oneHot.csv"), "all4");
 	}
 
 
