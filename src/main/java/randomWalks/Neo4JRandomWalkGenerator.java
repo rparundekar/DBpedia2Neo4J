@@ -145,7 +145,7 @@ public class Neo4JRandomWalkGenerator {
 	}
 
 
-	public Set<String> getAll(Session session, String id, List<StepType> allowedTypes, RelationshipLoadChecker binner) {
+	public Map<String,Set<String>> getAll(Session session, String id, List<StepType> allowedTypes, RelationshipLoadChecker binner) {
 		Set<String> walks=new HashSet<>();
 
 		String currentNodeId=id;
@@ -205,6 +205,9 @@ public class Neo4JRandomWalkGenerator {
 			if(!walks.contains(w) && !w.isEmpty())
 				walks.add(w);
 		}
-		return walks;
+		
+		Map<String, Set<String>> returnObject =  new HashMap<>();
+		returnObject.put("1xall", walks);
+		return returnObject;
 	}
 }

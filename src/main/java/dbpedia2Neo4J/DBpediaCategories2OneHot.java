@@ -1,7 +1,5 @@
 package dbpedia2Neo4J;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -9,23 +7,17 @@ import java.io.LineNumberReader;
 import java.io.StringReader;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.jena.datatypes.DatatypeFormatException;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.Triple;
-import org.apache.jena.ontology.OntClass;
-import org.apache.jena.ontology.OntModel;
-import org.apache.jena.ontology.OntModelSpec;
-import org.apache.jena.rdf.model.ModelFactory;
 import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.RDFDataMgr;
 import org.apache.jena.riot.RiotException;
 import org.apache.jena.riot.system.StreamRDF;
 import org.apache.jena.sparql.core.Quad;
-import org.apache.jena.vocabulary.RDF;
 import org.neo4j.driver.v1.AuthTokens;
 import org.neo4j.driver.v1.Driver;
 import org.neo4j.driver.v1.GraphDatabase;
@@ -42,41 +34,24 @@ import com.opencsv.CSVWriter;
  *  NOTE: Currently only tested on Oct 2016 files for instance_types_en.ttl
  * @author rparundekar
  */
-public class DBpediaTypes2OneHot implements StreamRDF{
+public class DBpediaCategories2OneHot implements StreamRDF{
 	// SLF4J Logger bound to Log4J 
-	private static final Logger logger=LoggerFactory.getLogger(DBpediaTypes2OneHot.class);
-
-	private final OntModel ontModel;
+	private static final Logger logger=LoggerFactory.getLogger(DBpediaYAGO2OneHot.class);
 	private int oneHotCount = 0;
 	private final Map<String, Integer> oneHotPosition;
+	private final Map<String, Integer> instanceCount;
 	private final Map<String, Set<String>> types;
-
 	private final Driver driver;
 	private Session session;
 	private int notFound=0;
 
-	/**
-	 * Loads the Owl Ontology
-	 * @param ontologyFile The OWL file
-	 * @throws FileNotFoundException If file is not found
-	 */
-	public DBpediaTypes2OneHot(File ontologyFile, String neo4jUsername, String neo4jPassword){
+	public DBpediaCategories2OneHot(String neo4jUsername, String neo4jPassword){
 		logger.info("Connecting to Neo4J...");
 		// Connect to Neo4J
 		driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic( neo4jUsername, neo4jPassword) );
-
-		logger.info("Loading OWL file ...");
-		OntModel base = ModelFactory.createOntologyModel( OntModelSpec.OWL_MEM );
-		try {
-			base.read( new FileInputStream(ontologyFile), "RDF/XML" );
-		} catch (FileNotFoundException e) {
-			logger.error("Could not find ontology file");
-		}
-
-		// create the reasoning model using the base
-		ontModel = ModelFactory.createOntologyModel( OntModelSpec.OWL_MEM_MICRO_RULE_INF, base );
 		oneHotPosition=new HashMap<>();
 		types=new HashMap<>();
+		instanceCount=new HashMap<>();
 		logger.info("...Done");
 	}
 
@@ -99,7 +74,7 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 					this.session=session;
 					// Print progress
 					if(lnr.getLineNumber()%1000==0){
-						logger.info("{} lines parsed. {} types present. {} lines with no instances", lnr.getLineNumber(), oneHotCount, notFound);
+						logger.info("{} lines parsed. {} lines with no instances", lnr.getLineNumber(), notFound);
 					}
 					// Parse the line read using the stream API. Make sure we catch parsing errors. 
 					try{
@@ -118,9 +93,16 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 			// Something went wrong with the files.
 			logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 		}
+
+		for(String type:instanceCount.keySet()){
+			int count =  instanceCount.get(type);
+			if(count>10)
+				oneHot(type);
+		}
+		logger.info("{} possible types present.", oneHotCount);
 		try{	
 			// Step 2: Create the csv with the onehot types;
-			File outputCsv = new File(turtleFile.getParentFile(), "oneHot.csv");
+			File outputCsv = new File(turtleFile.getParentFile(), "categoriesOneHot.csv");
 			CSVWriter csvWriter = new CSVWriter(new FileWriter(outputCsv), ',', CSVWriter.NO_QUOTE_CHARACTER);
 			//Write the header
 			String[] header = new String[oneHotCount+1];
@@ -155,8 +137,8 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 	 * @param args Have the username, password, if DB should be cleared AND list of files to load here
 	 */
 	public static void main(String[] args){
-		DBpediaTypes2OneHot loadFile = new DBpediaTypes2OneHot(new File("/Users/rparundekar/dataspace/dbpedia2016/dbpedia_2016-04.owl"),"neo4j","icd");
-		loadFile.load(new File("/Users/rparundekar/dataspace/dbpedia2016/instance_types_en.ttl"));
+		DBpediaYAGO2OneHot loadFile = new DBpediaYAGO2OneHot("neo4j","icd");
+		loadFile.load(new File("/Users/rparundekar/dataspace/dbpedia2016/article_categories_en.ttl"));
 	}
 
 	@Override
@@ -192,14 +174,6 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 		// Get and clean the subject URI (There are no blank nodes in DBpedia)
 		String subject = triple.getMatchSubject().getURI();
 		subject=DBpediaHelper.stripClean(subject);
-
-
-		// Get and clean the predicate URI (There are no blank nodes in DBpedia)
-		String predicate = triple.getMatchPredicate().getURI();
-		if(!predicate.equals(RDF.type.getURI())){
-			logger.error("Property is not rdf:type");
-		}
-
 		String query = "MATCH (t:Thing {id:'"+ subject +"'}) return t";
 
 		StatementResult result = session.run(query);
@@ -209,19 +183,14 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 			if(object.isURI()){
 				// Get and clean the object URI (There are no blank nodes in DBpedia)
 				String o=object.getURI();
+
+				Integer c = instanceCount.get(o);
+				if(c==null)
+					instanceCount.put(o, 1);
+				else
+					instanceCount.put(o, c+1);
+
 				putTypes(subject,o);
-
-
-				//System.out.println(subject + " " + o);
-				OntClass ontClass=ontModel.getOntClass(o);
-				oneHot(o);
-				for (Iterator<OntClass> i = ontClass.listSuperClasses(true); i.hasNext(); ) {
-					OntClass c = i.next();
-					String type=c.getURI();
-					//System.out.println("\t" + c.getURI());
-					oneHot(type);
-					putTypes(subject,type);
-				}
 			}
 			else{
 				logger.error("Value of type is not a URI");
@@ -229,6 +198,7 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 		}else{
 			notFound++;
 		}
+
 
 	}
 

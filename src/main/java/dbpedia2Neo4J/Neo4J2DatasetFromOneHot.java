@@ -1,6 +1,4 @@
 package dbpedia2Neo4J;
-import static org.neo4j.driver.v1.Values.parameters;
-
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -14,14 +12,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.jena.base.Sys;
 import org.neo4j.driver.v1.AuthTokens;
 import org.neo4j.driver.v1.Driver;
 import org.neo4j.driver.v1.GraphDatabase;
 import org.neo4j.driver.v1.Record;
 import org.neo4j.driver.v1.Session;
 import org.neo4j.driver.v1.StatementResult;
-import org.neo4j.driver.v1.Transaction;
 import org.neo4j.driver.v1.exceptions.ClientException;
 import org.neo4j.driver.v1.types.Node;
 import org.neo4j.driver.v1.types.Relationship;
@@ -31,8 +27,8 @@ import org.slf4j.LoggerFactory;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 
-import randomWalks.RelationshipLoadChecker;
 import randomWalks.Neo4JRandomWalkGenerator;
+import randomWalks.RelationshipLoadChecker;
 import randomWalks.StepType;
 
 /**
@@ -79,92 +75,93 @@ public class Neo4J2DatasetFromOneHot{
 	public void create(File oneHotCsv, String datasetName){
 		binner=new RelationshipLoadChecker(oneHotCsv.getParentFile());
 		boolean test=false;
-		boolean createRelationshipBins = true;
+		boolean createRelationshipBins = false;
 		if(createRelationshipBins){
-				//First, we load the relationships for binning, etc.
-				try{
-					CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
-					//Read the header
-					String[] header=csvReader.readNext();
-					if(!header[0].equals("id")){
-						logger.error("First column is not the id");
-					}else{
-						//Read each line to get the id & then get random walks
-						String[] row=null;
-						try(Session session=driver.session()){
-							while((row=csvReader.readNext())!=null){
-								// Print progress
-								String id=row[0];
-								String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return t,r,o";
-								StatementResult result = session.run(query);
-								if(result.hasNext()){
-									logger.debug("\t{} Found!", id);
-									Record record = result.next();
-									Relationship relationship = record.get("r").asRelationship();
-									Node otherNode=record.get("o").asNode();
-									binner.bin(relationship.type(), otherNode.get("id").asObject().toString());
-								}
-								if(csvReader.getLinesRead()%1000==0){
-									logger.info("{} lines parsed to create bins from relationships.", csvReader.getLinesRead());
-								}
-								if(test && csvReader.getLinesRead()>TEST_LINES){
-									break;
-								}
+			//First, we load the relationships for binning, etc.
+			try{
+				CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
+				//Read the header
+				String[] header=csvReader.readNext();
+				if(!header[0].equals("id")){
+					logger.error("First column is not the id");
+				}else{
+					//Read each line to get the id & then get random walks
+					String[] row=null;
+					try(Session session=driver.session()){
+						while((row=csvReader.readNext())!=null){
+							// Print progress
+							String id=row[0];
+							String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return t,r,o";
+							StatementResult result = session.run(query);
+							if(result.hasNext()){
+								logger.debug("\t{} Found!", id);
+								Record record = result.next();
+								Relationship relationship = record.get("r").asRelationship();
+								Node otherNode=record.get("o").asNode();
+								binner.bin(relationship.type(), otherNode.get("id").asObject().toString());
 							}
-						}catch (ClientException e) {
-							e.printStackTrace();
-							logger.error("Error in getting walks: {}",  e.getMessage());
+							if(csvReader.getLinesRead()%1000==0){
+								logger.info("{} lines parsed to create bins from relationships.", csvReader.getLinesRead());
+							}
+							if(test && csvReader.getLinesRead()>TEST_LINES){
+								break;
+							}
 						}
+					}catch (ClientException e) {
+						e.printStackTrace();
+						logger.error("Error in getting walks: {}",  e.getMessage());
 					}
-					// Close IO
-					csvReader.close();
-				}catch(IOException e){
-					// Something went wrong with the files.
-					logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 				}
+				// Close IO
+				csvReader.close();
+			}catch(IOException e){
+				// Something went wrong with the files.
+				logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
+			}
 		}
 		//Build the bins and write to file
 		binner.buildBins();
-		
-		//Then, we create the dataset using random walks.
-		try{
-			CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
-			//Read the header
-			String[] header=csvReader.readNext();
-			if(!header[0].equals("id")){
-				logger.error("First column is not the id");
-			}else{
-				//Read each line to get the id & then get random walks
-				String[] row=null;
 
-				try(Session session=driver.session()){
+		//Then, we create the dataset using random walks.
+		try(Session session=driver.session()){
+			try{
+				CSVReader csvReader = new CSVReader(new FileReader(oneHotCsv));
+				//Read the header
+				String[] header=csvReader.readNext();
+				if(!header[0].equals("id")){
+					logger.error("First column is not the id");
+				}else{
+					//Read each line to get the id & then get random walks
+					String[] row=null;
+
 					long start = System.currentTimeMillis();
 					while((row=csvReader.readNext())!=null){
 						// Print progress
 						String id=row[0];
 						List<StepType> allowedSteps=new ArrayList<>();
-						allowedSteps.add(StepType.HAS_ATTRIBUTE);
-						allowedSteps.add(StepType.HAS_RELATIONSHIP);
+//						allowedSteps.add(StepType.HAS_ATTRIBUTE);
+//						allowedSteps.add(StepType.HAS_RELATIONSHIP);
 						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
-						allowedSteps.add(StepType.RELATIONSHIP_STEP);
+//						allowedSteps.add(StepType.RELATIONSHIP_STEP);
 						//						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
 
 
 						List<Integer> maxLengths = new ArrayList<>();
-												maxLengths.add(1);
-												maxLengths.add(2);
-												//maxLengths.add(3);
-					
-//						maxLengths.add(5);
-//						maxLengths.add(7);
+						//maxLengths.add(1);
+						maxLengths.add(2);
+						//maxLengths.add(3);
+
+						//						maxLengths.add(5);
+						//						maxLengths.add(7);
 
 						List<Integer> numbersOfWalks = new ArrayList<>();
-						numbersOfWalks.add(5);
-						numbersOfWalks.add(10);
-						numbersOfWalks.add(15);
+						numbersOfWalks.add(50);
+						numbersOfWalks.add(100);
+						//						numbersOfWalks.add(10);
+						//						numbersOfWalks.add(15);
 
-						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,maxLengths, numbersOfWalks);
-						//						Set<String> walks=neo4jRandomWalkGenerator.getAll(session, id, allowedSteps, binner);
+//						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,maxLengths, numbersOfWalks);
+						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getAll(session, id, allowedSteps, binner);
 						for(String dataset:allWalks.keySet()){
 							Set<String> walks=allWalks.get(dataset);
 							if(!walks.isEmpty()){
@@ -219,16 +216,16 @@ public class Neo4J2DatasetFromOneHot{
 							break;
 						}
 					}
-				}catch (ClientException e) {
-					e.printStackTrace();
-					logger.error("Error in getting walks: {}",  e.getMessage());
 				}
+				// Close IO
+				csvReader.close();
+			}catch(IOException e){
+				// Something went wrong with the files.
+				logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 			}
-			// Close IO
-			csvReader.close();
-		}catch(IOException e){
-			// Something went wrong with the files.
-			logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
+		}catch (ClientException e) {
+			e.printStackTrace();
+			logger.error("Error in getting walks: {}",  e.getMessage());
 		}
 
 		for(String dataset:allRandomWalks.keySet()){
@@ -284,7 +281,7 @@ public class Neo4J2DatasetFromOneHot{
 				//file for the walks and a dataset file for the classes.
 				String[] row=null;
 				int batch=0;
-				int batchSize=2000;
+				int batchSize=5000;
 				while((row=csvReader.readNext())!=null){
 					long linesRead = csvReader.getLinesRead();
 					if(linesRead>(batch*batchSize)){
@@ -303,7 +300,6 @@ public class Neo4J2DatasetFromOneHot{
 						head=head.substring(1,head.length()-1).trim();
 						sparseDataXWriter.println(head);
 						sparseDataXWriter.flush();
-
 					}
 					// Print progress
 					String id=row[0];
@@ -351,7 +347,7 @@ public class Neo4J2DatasetFromOneHot{
 	 */
 	public static void main(String[] args){
 		Neo4J2DatasetFromOneHot loadFile = new Neo4J2DatasetFromOneHot("neo4j", "icd");
-		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/oneHot.csv"), "all4");
+		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/oneHot.csv"), "inRelFinal");
 	}
 
 
