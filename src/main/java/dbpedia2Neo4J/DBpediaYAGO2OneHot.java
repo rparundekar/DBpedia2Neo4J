@@ -45,6 +45,7 @@ public class DBpediaYAGO2OneHot implements StreamRDF{
 	private final Driver driver;
 	private Session session;
 	private int notFound=0;
+	private int skipCount=0;
 	public DBpediaYAGO2OneHot(String neo4jUsername, String neo4jPassword){
 		logger.info("Connecting to Neo4J...");
 		// Connect to Neo4J
@@ -74,7 +75,7 @@ public class DBpediaYAGO2OneHot implements StreamRDF{
 					this.session=session;
 					// Print progress
 					if(lnr.getLineNumber()%1000==0){
-						logger.info("{} lines parsed. {} lines with no instances", lnr.getLineNumber(), notFound);
+						logger.info("{} lines parsed. {} lines with no instances. {} lines skipped with wikicat", lnr.getLineNumber(), notFound, skipCount);
 					}
 					// Parse the line read using the stream API. Make sure we catch parsing errors. 
 					try{
@@ -99,7 +100,7 @@ public class DBpediaYAGO2OneHot implements StreamRDF{
 				int count =  instanceCount.get(type);
 				pw.println(type +","+ count);
 				pw.flush();
-				if(count>10)
+				if(count>300)
 					oneHot(type);
 			}
 			pw.close();
@@ -178,7 +179,16 @@ public class DBpediaYAGO2OneHot implements StreamRDF{
 	@Override
 	public void triple(Triple triple) {
 		// Handle the triple
-
+		Node object = triple.getMatchObject();
+		if(object.isURI()){
+			// Get and clean the object URI (There are no blank nodes in DBpedia)
+			String o=object.getURI();
+			if(o.toLowerCase().contains("wikicat")){
+				skipCount++;
+				return;
+			}
+		}
+		
 		// Get and clean the subject URI (There are no blank nodes in DBpedia)
 		String subject = triple.getMatchSubject().getURI();
 		subject=DBpediaHelper.stripClean(subject);
@@ -187,11 +197,10 @@ public class DBpediaYAGO2OneHot implements StreamRDF{
 		StatementResult result = session.run(query);
 		if(result.hasNext()){
 			// Get the object. It can be a URI or a literal (There are no blank nodes in the DBpedia)
-			Node object = triple.getMatchObject();
 			if(object.isURI()){
 				// Get and clean the object URI (There are no blank nodes in DBpedia)
 				String o=object.getURI();
-
+				
 				Integer c = instanceCount.get(o);
 				if(c==null)
 					instanceCount.put(o, 1);

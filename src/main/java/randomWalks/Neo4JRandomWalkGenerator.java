@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.neo4j.driver.v1.Record;
 import org.neo4j.driver.v1.Session;
@@ -36,6 +37,7 @@ public class Neo4JRandomWalkGenerator {
 				for(int eachWalk=0;eachWalk<numberOfWalks;eachWalk++){
 					int lengthOfWalk = lengthList.get((int)Math.floor(Math.random()*lengthList.size()));
 					String currentNodeId=id;
+					Set<String> stepsAtNode = new TreeSet<>();
 					StringBuilder walk=new StringBuilder();
 					for(int step=0;step<lengthOfWalk;step++){
 						List<String> availableSteps = null;
@@ -124,10 +126,20 @@ public class Neo4JRandomWalkGenerator {
 						int index=(int) Math.floor(Math.random()*availableSteps.size());
 						String s=availableSteps.get(index);
 						String nextNodeId = nextNodes.get(index);
-						walk.append(s);
+						if(currentNodeId.equals(nextNodeId)){
+							stepsAtNode.add(s);
+						}else{
+							for(String st:stepsAtNode)
+								walk.append(st);
+							stepsAtNode.clear();
+							walk.append(s);
+						}
 						currentNodeId=nextNodeId;
 					}
-
+					for(String st:stepsAtNode)
+						walk.append(st);
+					stepsAtNode.clear();
+					
 					String w = walk.toString().trim();
 					if(w.endsWith(","))
 						w=w.substring(0, w.length()-1);

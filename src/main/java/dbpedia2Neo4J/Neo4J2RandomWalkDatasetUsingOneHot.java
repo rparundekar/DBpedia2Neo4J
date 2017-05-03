@@ -36,10 +36,10 @@ import randomWalks.StepType;
  *  NOTE: Currently only tested on Oct 2016 files for infobox_properties_en.ttl
  * @author rparundekar
  */
-public class Neo4J2DatasetFromOneHot{
+public class Neo4J2RandomWalkDatasetUsingOneHot{
 	private static final int TEST_LINES = 3100;
 	// SLF4J Logger bound to Log4J 
-	private static final Logger logger=LoggerFactory.getLogger(Neo4J2DatasetFromOneHot.class);
+	private static final Logger logger=LoggerFactory.getLogger(Neo4J2RandomWalkDatasetUsingOneHot.class);
 	// Driver object created once for the connection
 	private final Driver driver;
 	private final Map<String,Map<String,int[]>> allRandomWalks;
@@ -55,7 +55,7 @@ public class Neo4J2DatasetFromOneHot{
 	 * @param neo4jPassword Password for Neo4J
 	 * @param deleteAll Should all existing nodes and edges be deleted?
 	 */
-	public Neo4J2DatasetFromOneHot(String neo4jUsername, String neo4jPassword){
+	public Neo4J2RandomWalkDatasetUsingOneHot(String neo4jUsername, String neo4jPassword){
 		logger.info("Connecting to Neo4J...");
 		// Connect to Neo4J
 		driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic( neo4jUsername, neo4jPassword) );
@@ -75,7 +75,7 @@ public class Neo4J2DatasetFromOneHot{
 	public void create(File oneHotCsv, String datasetName){
 		binner=new RelationshipLoadChecker(oneHotCsv.getParentFile());
 		boolean test=false;
-		boolean createRelationshipBins = false;
+		boolean createRelationshipBins = true;
 		if(createRelationshipBins){
 			//First, we load the relationships for binning, etc.
 			try{
@@ -87,8 +87,9 @@ public class Neo4J2DatasetFromOneHot{
 				}else{
 					//Read each line to get the id & then get random walks
 					String[] row=null;
-					try(Session session=driver.session()){
-						while((row=csvReader.readNext())!=null){
+					long start=System.currentTimeMillis();
+					while((row=csvReader.readNext())!=null){
+						try(Session session=driver.session()){
 							// Print progress
 							String id=row[0];
 							String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return t,r,o";
@@ -101,15 +102,16 @@ public class Neo4J2DatasetFromOneHot{
 								binner.bin(relationship.type(), otherNode.get("id").asObject().toString());
 							}
 							if(csvReader.getLinesRead()%1000==0){
-								logger.info("{} lines parsed to create bins from relationships.", csvReader.getLinesRead());
+								logger.info("{} lines parsed to create bins from relationships in {} ms.", csvReader.getLinesRead(), (System.currentTimeMillis()-start));
+								start = System.currentTimeMillis();
 							}
 							if(test && csvReader.getLinesRead()>TEST_LINES){
 								break;
 							}
+						}catch (ClientException e) {
+							e.printStackTrace();
+							logger.error("Error in getting walks: {}",  e.getMessage());
 						}
-					}catch (ClientException e) {
-						e.printStackTrace();
-						logger.error("Error in getting walks: {}",  e.getMessage());
 					}
 				}
 				// Close IO
@@ -139,29 +141,28 @@ public class Neo4J2DatasetFromOneHot{
 						// Print progress
 						String id=row[0];
 						List<StepType> allowedSteps=new ArrayList<>();
-//						allowedSteps.add(StepType.HAS_ATTRIBUTE);
-//						allowedSteps.add(StepType.HAS_RELATIONSHIP);
+						allowedSteps.add(StepType.HAS_ATTRIBUTE);
+						allowedSteps.add(StepType.HAS_RELATIONSHIP);
 						allowedSteps.add(StepType.HAS_INCOMING_RELATIONSHIP);
-//						allowedSteps.add(StepType.RELATIONSHIP_STEP);
+						allowedSteps.add(StepType.RELATIONSHIP_STEP);
 						//						allowedSteps.add(StepType.INCOMING_RELATIONSHIP_STEP);
 
 
 						List<Integer> maxLengths = new ArrayList<>();
-						//maxLengths.add(1);
 						maxLengths.add(2);
-						//maxLengths.add(3);
 
 						//						maxLengths.add(5);
 						//						maxLengths.add(7);
 
 						List<Integer> numbersOfWalks = new ArrayList<>();
+						numbersOfWalks.add(10);
+						numbersOfWalks.add(25);
 						numbersOfWalks.add(50);
-						numbersOfWalks.add(100);
 						//						numbersOfWalks.add(10);
 						//						numbersOfWalks.add(15);
 
-//						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,maxLengths, numbersOfWalks);
-						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getAll(session, id, allowedSteps, binner);
+						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getWalks(session, id, allowedSteps, binner,maxLengths, numbersOfWalks);
+						//						Map<String, Set<String>> allWalks=neo4jRandomWalkGenerator.getAll(session, id, allowedSteps, binner);
 						for(String dataset:allWalks.keySet()){
 							Set<String> walks=allWalks.get(dataset);
 							if(!walks.isEmpty()){
@@ -286,7 +287,6 @@ public class Neo4J2DatasetFromOneHot{
 					long linesRead = csvReader.getLinesRead();
 					if(linesRead>(batch*batchSize)){
 						batch++;
-
 						if(datasetYWriter!=null)
 							datasetYWriter.close();
 						datasetYWriter=new CSVWriter(new FileWriter(new File(folder,"datasetY_" + batch +".csv")), ',', CSVWriter.NO_QUOTE_CHARACTER);
@@ -346,8 +346,8 @@ public class Neo4J2DatasetFromOneHot{
 	 * @param args Have the username, password, if DB should be cleared AND list of files to load here
 	 */
 	public static void main(String[] args){
-		Neo4J2DatasetFromOneHot loadFile = new Neo4J2DatasetFromOneHot("neo4j", "icd");
-		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/oneHot.csv"), "inRelFinal");
+		Neo4J2RandomWalkDatasetUsingOneHot loadFile = new Neo4J2RandomWalkDatasetUsingOneHot("neo4j", "icd");
+		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/yagoOneHot.csv"), "yagoAll4Final");
 	}
 
 

@@ -4,6 +4,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.LineNumberReader;
+import java.io.PrintWriter;
 import java.io.StringReader;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -36,7 +37,7 @@ import com.opencsv.CSVWriter;
  */
 public class DBpediaCategories2OneHot implements StreamRDF{
 	// SLF4J Logger bound to Log4J 
-	private static final Logger logger=LoggerFactory.getLogger(DBpediaYAGO2OneHot.class);
+	private static final Logger logger=LoggerFactory.getLogger(DBpediaCategories2OneHot.class);
 	private int oneHotCount = 0;
 	private final Map<String, Integer> oneHotPosition;
 	private final Map<String, Integer> instanceCount;
@@ -94,10 +95,18 @@ public class DBpediaCategories2OneHot implements StreamRDF{
 			logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 		}
 
-		for(String type:instanceCount.keySet()){
-			int count =  instanceCount.get(type);
-			if(count>10)
-				oneHot(type);
+		try{
+			PrintWriter pw = new PrintWriter(new File(turtleFile.getParentFile(), "categoryCounts.csv"));
+			for(String type:instanceCount.keySet()){
+				int count =  instanceCount.get(type);
+				pw.println(type +","+ count);
+				pw.flush();
+				if(count>300)
+					oneHot(type);
+			}
+			pw.close();
+		}catch(IOException e){
+			e.printStackTrace();
 		}
 		logger.info("{} possible types present.", oneHotCount);
 		try{	
@@ -137,7 +146,7 @@ public class DBpediaCategories2OneHot implements StreamRDF{
 	 * @param args Have the username, password, if DB should be cleared AND list of files to load here
 	 */
 	public static void main(String[] args){
-		DBpediaYAGO2OneHot loadFile = new DBpediaYAGO2OneHot("neo4j","icd");
+		DBpediaCategories2OneHot loadFile = new DBpediaCategories2OneHot("neo4j","icd");
 		loadFile.load(new File("/Users/rparundekar/dataspace/dbpedia2016/article_categories_en.ttl"));
 	}
 
@@ -183,7 +192,7 @@ public class DBpediaCategories2OneHot implements StreamRDF{
 			if(object.isURI()){
 				// Get and clean the object URI (There are no blank nodes in DBpedia)
 				String o=object.getURI();
-
+				o=DBpediaHelper.stripClean(o);
 				Integer c = instanceCount.get(o);
 				if(c==null)
 					instanceCount.put(o, 1);
