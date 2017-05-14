@@ -8,10 +8,10 @@ import java.io.IOException;
 import java.io.LineNumberReader;
 import java.io.StringReader;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.jena.datatypes.DatatypeFormatException;
 import org.apache.jena.graph.Node;
@@ -26,45 +26,36 @@ import org.apache.jena.riot.RiotException;
 import org.apache.jena.riot.system.StreamRDF;
 import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.vocabulary.RDF;
-import org.neo4j.driver.v1.AuthTokens;
-import org.neo4j.driver.v1.Driver;
-import org.neo4j.driver.v1.GraphDatabase;
-import org.neo4j.driver.v1.Session;
-import org.neo4j.driver.v1.StatementResult;
-import org.neo4j.driver.v1.exceptions.ClientException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.opencsv.CSVWriter;
 
 /**
- *  This is a loader for DBpedia type data into One Hot
- *  NOTE: Currently only tested on Oct 2016 files for instance_types_en.ttl
+ * Target vector generation from the DBpedia types file using the DBpedia Ontology.
+ * We use the Apache Jena Stream RDF API for parsing the Triple file. 
+ * NOTE: Currently only tested on Oct 2016 files for instance_types_en.ttl
  * @author rparundekar
  */
-public class DBpediaTypes2OneHot implements StreamRDF{
+public class DBpediaTypes2TargetVectors implements StreamRDF{
 	// SLF4J Logger bound to Log4J 
-	private static final Logger logger=LoggerFactory.getLogger(DBpediaTypes2OneHot.class);
+	private static final Logger logger=LoggerFactory.getLogger(DBpediaTypes2TargetVectors.class);
 
+	//The ontology
 	private final OntModel ontModel;
-	private int oneHotCount = 0;
-	private final Map<String, Integer> oneHotPosition;
-	private final Map<String, Set<String>> types;
-
-	private final Driver driver;
-	private Session session;
-	private int notFound=0;
-
+	
+	//Data for the target vectors
+	private int targetVectorCount = 0;
+	private final Map<String, Integer> targetVectorPosition;
+	private Map<String, Set<String>> types;
+	private int notFoundCount=0;
+	
 	/**
-	 * Loads the Owl Ontology
+	 * Constructor that loads the Owl Ontology
 	 * @param ontologyFile The OWL file
 	 * @throws FileNotFoundException If file is not found
 	 */
-	public DBpediaTypes2OneHot(File ontologyFile, String neo4jUsername, String neo4jPassword){
-		logger.info("Connecting to Neo4J...");
-		// Connect to Neo4J
-		driver = GraphDatabase.driver( "bolt://localhost:7687", AuthTokens.basic( neo4jUsername, neo4jPassword) );
-
+	public DBpediaTypes2TargetVectors(File ontologyFile){
 		logger.info("Loading OWL file ...");
 		OntModel base = ModelFactory.createOntologyModel( OntModelSpec.OWL_MEM );
 		try {
@@ -73,20 +64,27 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 			logger.error("Could not find ontology file");
 		}
 
-		// create the reasoning model using the base
+		// Create the reasoning model using the base
 		ontModel = ModelFactory.createOntologyModel( OntModelSpec.OWL_MEM_MICRO_RULE_INF, base );
-		oneHotPosition=new HashMap<>();
-		types=new HashMap<>();
+		targetVectorPosition=new HashMap<>();
+		
 		logger.info("...Done");
 	}
 
 	/**
-	 * Load the RDF data from the DBPedia turtle (.ttl) file 
-	 * @param turtleFile The DBPedia turtle file e.g. instance_types.en 
+	 * Load the RDF data from the DBPedia turtle (.ttl) file, 
+	 * by taking an inner join on the Semantic Graph file.
+	 * @param semanticGraphFile The file for the Semantic Graph e.g. infobox_properties.en.ttl 
+	 * @param turtleFile The DBPedia turtle file e.g. instance_types.en.ttl 
 	 */
-	public void load(File turtleFile){
+	public void load(File semanticGraphFile, File turtleFile){
+		logger.info("Loading instance sets from the semantic graph file for inner join");
+		InMemoryInstanceMapLoader inMemoryInstanceSetLoader=new InMemoryInstanceMapLoader();
+		inMemoryInstanceSetLoader.load(semanticGraphFile);
+		types=inMemoryInstanceSetLoader.getInstances();
+		logger.info("...Done");
+		
 		try{
-
 			// Step 1: Find the different types by iterating once through the instances
 			// Since the turtle file might contain errors (e.g. in the properties 
 			// there is a value 'Infinity', with datatype xsd:double), we need to read each line
@@ -94,51 +92,50 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 			// It sucks, since it's slow. But hey 'Infinity' cant be parsed as a double. 
 			LineNumberReader lnr=new LineNumberReader(new FileReader(turtleFile));
 			String line=null;
+			long start=System.currentTimeMillis();
 			while((line=lnr.readLine())!=null){
-				try(Session session=driver.session()){
-					this.session=session;
-					// Print progress
-					if(lnr.getLineNumber()%1000==0){
-						logger.info("{} lines parsed. {} types present. {} lines with no instances", lnr.getLineNumber(), oneHotCount, notFound);
-					}
-					// Parse the line read using the stream API. Make sure we catch parsing errors. 
-					try{
-						RDFDataMgr.parse(this, new StringReader(line), Lang.TURTLE);
-					}catch(DatatypeFormatException|RiotException de){
-						logger.error("Illegal data format in line : " +line);
-					}
-				}catch (ClientException e) {
-					e.printStackTrace();
-					logger.error("Error in getting walks: {}",  e.getMessage());
+				// Print progress
+				if(lnr.getLineNumber()%1000==0){
+					logger.info("{} lines parsed in {} ms. {} types present. {} lines with no instances", lnr.getLineNumber(), (System.currentTimeMillis()-start), targetVectorCount, notFoundCount);
+					start=System.currentTimeMillis();
+				}
+				// Parse the line read using the stream API. Make sure we catch parsing errors. 
+				try{
+					RDFDataMgr.parse(this, new StringReader(line), Lang.TURTLE);
+				}catch(DatatypeFormatException|RiotException de){
+					logger.error("Illegal data format in line : " +line);
 				}
 			}
-			// Close IO
 			lnr.close();
 		}catch(IOException e){
 			// Something went wrong with the files.
 			logger.error("Cannot load the data from the file due to file issue:" + e.getMessage());
 		}
 		try{	
-			// Step 2: Create the csv with the onehot types;
-			File outputCsv = new File(turtleFile.getParentFile(), "oneHot.csv");
+			// Step 2: Create the csv with the target vector types;
+			File outputCsv = new File(turtleFile.getParentFile(), "targetVectorFile.csv");
 			CSVWriter csvWriter = new CSVWriter(new FileWriter(outputCsv), ',', CSVWriter.NO_QUOTE_CHARACTER);
 			//Write the header
-			String[] header = new String[oneHotCount+1];
+			String[] header = new String[targetVectorCount+1];
 			header[0]="id";
-			for(String id:oneHotPosition.keySet()){
-				header[oneHotPosition.get(id)+1]=DBpediaHelper.stripClean(id);
+			for(String id:targetVectorPosition.keySet()){
+				header[targetVectorPosition.get(id)+1]=DBpediaHelper.stripClean(id);
 			}
 			csvWriter.writeNext(header);
-			logger.info("Writing to oneHotFile... (Sit back & go grab a coffee. This may take a while.)");
+			logger.info("Writing to targetVectorFile... (Sit back & go grab a coffee. This may take a while.)");
 			for(String subject:types.keySet()){
 				Set<String> typeOf=types.get(subject);
-				String[] row = new String[oneHotCount+1];
+				if(typeOf.isEmpty())
+					continue;
+				String[] row = new String[typeOf.size()+1];
 				row[0]=subject;
-				for(String id:oneHotPosition.keySet()){
+				int i=1;
+				for(String id:targetVectorPosition.keySet()){
 					if(typeOf.contains(id))
-						row[oneHotPosition.get(id)+1]="1";
-					else
-						row[oneHotPosition.get(id)+1]="0";
+					{
+						row[i]=""+(targetVectorPosition.get(id)+1);
+						i++;
+					}
 				}
 				csvWriter.writeNext(row);
 				csvWriter.flush();
@@ -152,11 +149,10 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 
 	/**
 	 * Get stuff running.
-	 * @param args Have the username, password, if DB should be cleared AND list of files to load here
 	 */
 	public static void main(String[] args){
-		DBpediaTypes2OneHot loadFile = new DBpediaTypes2OneHot(new File("/Users/rparundekar/dataspace/dbpedia2016/dbpedia_2016-04.owl"),"neo4j","icd");
-		loadFile.load(new File("/Users/rparundekar/dataspace/dbpedia2016/instance_types_en.ttl"));
+		DBpediaTypes2TargetVectors loadFile = new DBpediaTypes2TargetVectors(new File("/Users/rparundekar/dataspace/dbpedia2016/dbpedia_2016-04.owl"));
+		loadFile.load(new File("/Users/rparundekar/dataspace/dbpedia2016/infobox_properties_en.ttl"), new File("/Users/rparundekar/dataspace/dbpedia2016/instance_types_en.ttl"));
 	}
 
 	@Override
@@ -200,53 +196,64 @@ public class DBpediaTypes2OneHot implements StreamRDF{
 			logger.error("Property is not rdf:type");
 		}
 
-		String query = "MATCH (t:Thing {id:'"+ subject +"'}) return t";
-
-		StatementResult result = session.run(query);
-		if(result.hasNext()){
+		if(types.containsKey(subject)){
 			// Get the object. It can be a URI or a literal (There are no blank nodes in the DBpedia)
 			Node object = triple.getMatchObject();
 			if(object.isURI()){
 				// Get and clean the object URI (There are no blank nodes in DBpedia)
-				String o=object.getURI();
+				String t=object.getURI();
+				if(t.equals("http://www.w3.org/2002/07/owl#Thing")||t.equals("http://www.w3.org/2000/01/rdf-schema#Resource")){
+					return;
+				}
+				String o=DBpediaHelper.stripClean(t);
+				makeTarget(o);
 				putTypes(subject,o);
 
-
-				//System.out.println(subject + " " + o);
-				OntClass ontClass=ontModel.getOntClass(o);
-				oneHot(o);
+				OntClass ontClass=ontModel.getOntClass(t);
 				for (Iterator<OntClass> i = ontClass.listSuperClasses(true); i.hasNext(); ) {
 					OntClass c = i.next();
 					String type=c.getURI();
-					//System.out.println("\t" + c.getURI());
-					oneHot(type);
+					if(type.equals("http://www.w3.org/2002/07/owl#Thing")||type.equals("http://www.w3.org/2000/01/rdf-schema#Resource")){
+						continue;
+					}
+					type=DBpediaHelper.stripClean(type);
+					makeTarget(type);
 					putTypes(subject,type);
 				}
 			}
 			else{
 				logger.error("Value of type is not a URI");
 			}
-		}else{
-			notFound++;
 		}
-
+		else{
+			notFoundCount++;
+		}
 	}
 
-	private void putTypes(String subject, String type) {
-		Set<String> typeOf = types.get(subject);
+	/**
+	 * Function to keep track of the types for an instance
+	 * @param individual The individual for which we want to track the type
+	 * @param type The type
+	 */
+	private void putTypes(String individual, String type) {
+		Set<String> typeOf = types.get(individual);
 		if(typeOf==null)
 		{
-			typeOf=new HashSet<>();
-			types.put(subject, typeOf);
+			typeOf=new TreeSet<>();
+			types.put(individual, typeOf);
 		}
-		if(!typeOf.contains(type))
-			typeOf.add(type);
+		typeOf.add(type);
 	}
 
-	private void oneHot(String o) {
-		if(!oneHotPosition.containsKey(o))
+
+	/**
+	 * Make the target and increment the count
+	 * @param type The type
+	 */
+	private void makeTarget(String type) {
+		if(!targetVectorPosition.containsKey(type))
 		{
-			oneHotPosition.put(o, oneHotCount++);
+			targetVectorPosition.put(type, targetVectorCount++);
 		}
 	}
 

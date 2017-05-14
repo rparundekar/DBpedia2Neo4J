@@ -7,6 +7,8 @@ public class DBpediaHelper {
 	 * @return The last part of the URI if in DBpedia.
 	 */
 	static String stripClean(String uri) {
+		if(uri.startsWith("http://dbpedia.org/ontology/"))
+			uri=uri.substring("http://dbpedia.org/ontology/".length());
 		if(uri.startsWith("http://dbpedia.org/resource/Category:"))
 			uri=uri.substring("http://dbpedia.org/resource/Category:".length());
 		if(uri.startsWith("http://dbpedia.org/resource/"))

@@ -347,7 +347,7 @@ public class Neo4J2RandomWalkDatasetUsingOneHot{
 	 */
 	public static void main(String[] args){
 		Neo4J2RandomWalkDatasetUsingOneHot loadFile = new Neo4J2RandomWalkDatasetUsingOneHot("neo4j", "icd");
-		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/yagoOneHot.csv"), "yagoAll4Final");
+		loadFile.create(new File("/Users/rparundekar/dataspace/dbpedia2016/oneHot.csv"), "all4Final");
 	}
 
 

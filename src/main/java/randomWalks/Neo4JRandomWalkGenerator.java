@@ -47,12 +47,14 @@ public class Neo4JRandomWalkGenerator {
 							nextNodes = new ArrayList<String>();
 							stepsCache.put(currentNodeId, availableSteps);
 							nextNodeCache.put(currentNodeId, nextNodes);
+							long identifier = -1;
 							if(allowedTypes.contains(StepType.HAS_ATTRIBUTE)){
 								Node node = null;
 								String query = "MATCH (t:Thing {id:'"+ id +"'}) return t";
 								StatementResult result = session.run(query);
 								if(result.hasNext()){
 									node = result.next().get("t").asNode();
+									identifier=node.id();
 								}
 								if(node!=null){
 									for(String attr:node.keys()){
@@ -67,13 +69,17 @@ public class Neo4JRandomWalkGenerator {
 								}
 							}
 							if((allowedTypes.contains(StepType.HAS_RELATIONSHIP)||allowedTypes.contains(StepType.RELATIONSHIP_STEP))){
-								String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return t,r,o";
-								StatementResult result = session.run(query);
-								Node node=null;
+								StatementResult result=null;
+								if(identifier==-1){
+									String query = "MATCH (t:Thing {id:'"+ id +"'})-[r]->(o:Thing) return r,o";
+									result = session.run(query);
+								}else{
+									String query = "MATCH (t:Thing)-[r]->(o:Thing) where id(t)="  + identifier+ " return r,o";
+									result = session.run(query);
+								}
 								while(result.hasNext()){
 									Record record = result.next();
 									Relationship relationship = record.get("r").asRelationship();
-									node = record.get("t").asNode();
 									Node otherNode=record.get("o").asNode();
 									String otherNodeId=otherNode.get("id").asObject().toString();
 									if(allowedTypes.contains(StepType.HAS_RELATIONSHIP)){
@@ -89,14 +95,18 @@ public class Neo4JRandomWalkGenerator {
 									}
 								}
 							}
-							if((allowedTypes.contains(StepType.HAS_INCOMING_RELATIONSHIP)||allowedTypes.contains(StepType.INCOMING_RELATIONSHIP_STEP))){
-								String query = "MATCH (o:Thing)-[r]->(t:Thing {id:'"+ id +"'}) return t,r,o";
-								StatementResult result = session.run(query);
-								Node node=null;
+							if((allowedTypes.contains(StepType.HAS_INCOMING_RELATIONSHIP))){
+								StatementResult result = null;
+								if(identifier==-1){
+									String query = "MATCH (o:Thing)-[r]->(t:Thing {id:'"+ id +"'}) return r,o";
+									result = session.run(query);
+								}else{
+									String query = "MATCH (o:Thing)-[r]->(t:Thing) where id(t)="  + identifier+ " return r,o";
+									result = session.run(query);
+								}
 								while(result.hasNext()){
 									Record record = result.next();
 									Relationship relationship = record.get("r").asRelationship();
-									node = record.get("t").asNode();
 
 									Node otherNode=record.get("o").asNode();
 									String otherNodeId=otherNode.get("id").asObject().toString();
@@ -108,10 +118,10 @@ public class Neo4JRandomWalkGenerator {
 											nextNodes.add(currentNodeId);
 										}
 									}
-									if(allowedTypes.contains(StepType.INCOMING_RELATIONSHIP_STEP)){
-										availableSteps.add(relationship.type() +"<-");
-										nextNodes.add(otherNodeId);
-									}
+//									if(allowedTypes.contains(StepType.INCOMING_RELATIONSHIP_STEP)){
+//										availableSteps.add(relationship.type() +"<-");
+//										nextNodes.add(otherNodeId);
+//									}
 								}
 							}
 						}
